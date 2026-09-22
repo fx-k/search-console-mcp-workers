@@ -1,16 +1,17 @@
 {
-  "name": "search-console-mcp-workers",
-  "version": "0.3.2",
+  "name": "search-console-mcp",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "Read-only Google Search Console and Bing Webmaster Tools Remote MCP on Cloudflare Workers",
+  "description": "Google Search Console + Bing Webmaster + PageSpeed MCP with Cloudflare Workers and OpenAI Tunnel runtimes",
   "scripts": {
-    "check": "node --check src/index.js && node --check src/oauth.js && node --check src/oauth-state.js && node --check src/crypto.js && node --check src/mcp.js && node --check src/google.js && node --check src/bing.js && node --check src/pagespeed.js && node --check src/intelligence.js && node --check src/technical.js && node --check src/indexing.js && node --check src/tools.js && node --check src/validation.js",
+    "check": "node --check src/core/bing.js && node --check src/core/crypto.js && node --check src/core/google.js && node --check src/core/indexing.js && node --check src/core/intelligence.js && node --check src/core/mcp.js && node --check src/core/pagespeed.js && node --check src/core/technical.js && node --check src/core/tools.js && node --check src/core/validation.js && node --check src/runtime/worker/index.js && node --check src/runtime/worker/oauth.js && node --check src/runtime/worker/oauth-state.js && node --check src/runtime/stdio.js",
     "test": "node --test test/*.test.js",
-    "dev": "wrangler dev --ip 127.0.0.1 --port 8787",
-    "build": "wrangler deploy --dry-run --outdir dist",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "worker:dev": "wrangler dev --ip 127.0.0.1 --port 8787",
+    "worker:build": "wrangler deploy --dry-run --outdir dist",
+    "worker:deploy": "wrangler deploy",
+    "worker:tail": "wrangler tail",
+    "stdio": "node src/runtime/stdio.js"
   },
   "license": "MIT",
   "engines": {

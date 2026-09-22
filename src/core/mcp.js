@@ -13,7 +13,7 @@ export async function handleMcp(env, msg) {
   if (msg.params !== undefined && (!msg.params || typeof msg.params !== 'object' || Array.isArray(msg.params))) return err(id, -32602, 'params 必须是对象');
   const params = msg.params || {};
   let result;
-  if (method === 'initialize') result = { protocolVersion: protocols.includes(params.protocolVersion) ? params.protocolVersion : protocols.at(-1), capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'search-console-mcp-workers', version: VERSION, title: 'Search Console MCP on Cloudflare Workers' }, instructions: INSTRUCTIONS };
+  if (method === 'initialize') result = { protocolVersion: protocols.includes(params.protocolVersion) ? params.protocolVersion : protocols.at(-1), capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'search-console-mcp', version: VERSION, title: 'Search Console MCP' }, instructions: INSTRUCTIONS };
   else if (method === 'ping') result = {};
   else if (method === 'tools/list') result = { tools: TOOLS };
   else if (method === 'tools/call') {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inspectHtml } from '../src/technical.js';
+import { inspectHtml } from '../src/core/technical.js';
 
 test('inspectHtml reads core SEO metadata and JSON-LD types', () => {
   const html = '<!doctype html><html lang="zh-CN"><head>' +

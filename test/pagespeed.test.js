@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pagespeedConfigured } from '../src/pagespeed.js';
+import { pagespeedConfigured } from '../src/core/pagespeed.js';
 
 test('PageSpeed is configured only by the existing Google service account', () => {
   const env = {

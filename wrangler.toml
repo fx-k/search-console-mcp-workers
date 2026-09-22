@@ -1,12 +1,12 @@
 name = "search-console-mcp"
-main = "src/index.js"
+main = "src/runtime/worker/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
+keep_vars = true
 
 [vars]
-# Browser-based ChatGPT OAuth/MCP requests. Keep this exact; do not use *.
+# ChatGPT Web browser requests. Keep this exact; do not use *.
 CORS_ALLOWED_ORIGINS = "https://chatgpt.com"
-INDEXNOW_KEY = "30f6260ce94cd8c82861cdfea9437ba9"
 
 [[durable_objects.bindings]]
 name = "OAUTH_STATE"

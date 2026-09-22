@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleMcp } from '../src/mcp.js';
-import { TOOLS } from '../src/tools.js';
+import { handleMcp } from '../src/core/mcp.js';
+import { TOOLS } from '../src/core/tools.js';
 
 const expected = [
   'connection_status', 'sites_list', 'sitemaps_list', 'analytics_query',
@@ -21,9 +21,10 @@ test('exposes SEO reads plus indexing submission tools', () => {
   }
 });
 
-test('MCP initialize and tools/list', async () => {
+test('MCP initialize and tools/list are runtime-neutral', async () => {
   const init = await handleMcp({}, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25' } });
-  assert.equal(init.result.serverInfo.name, 'search-console-mcp-workers');
+  assert.equal(init.result.serverInfo.name, 'search-console-mcp');
+  assert.equal(init.result.serverInfo.title, 'Search Console MCP');
   const list = await handleMcp({}, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   assert.equal(list.result.tools.length, expected.length);
 });

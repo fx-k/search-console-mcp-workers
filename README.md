@@ -1,131 +1,318 @@
-# Search Console MCP on Cloudflare Workers
+# Search Console MCP
 
-**Google Search Console + Bing Webmaster Tools + PageSpeed Insights + URL submission** Remote MCP for Cloudflare Workers, designed for ChatGPT and other clients that support authenticated Streamable HTTP MCP.
+[![CI](https://github.com/fx-k/search-console-mcp-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/fx-k/search-console-mcp-workers/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-brightgreen)
 
-This is a Workers-oriented adapter aligned with [saurabhsharma2u/search-console-mcp](https://github.com/saurabhsharma2u/search-console-mcp). It does **not** run the upstream Node CLI inside Workers; local filesystem/keychain auth is replaced by Worker Secrets and WebCrypto-friendly REST calls.
+> 一个 MCP，把 **Google Search Console、Bing Webmaster Tools、PageSpeed Insights、Google Indexing API 和 IndexNow** 接到 ChatGPT / MCP Client。
+>
+> 同一套核心能力，既可以一键部署到 **Cloudflare Workers**，也可以跑在自己的 **VPS + OpenAI Tunnel** 上。
 
-## Current v0.3 scope
+## 为什么会有两个运行方式？
 
-The Worker exposes SEO reads plus URL-submission writes:
+这个项目一开始只跑在 Cloudflare Workers：部署简单、不需要服务器，也很适合 Remote MCP。
 
-- Core reads: `connection_status`, `sites_list`, `sitemaps_list`, `analytics_query`, `inspection_inspect`
-- Search diagnostics: `bing_crawl_issues`, `pagespeed_analyze`, `site_health_check`, `schema_inspect`
-- Cross-period / cross-engine: `compare_engines`, `analytics_compare`, `analytics_anomalies`
-- SEO intelligence: `seo_audit`, `seo_keywords_research`, `genai_query_insights`
+但实际使用 Bing Webmaster API 时，Cloudflare Workers 的共享出口 IP **可能**遇到 Bing 返回 `ThrottleIP`。这不是 API Key 失效，而是 Bing 对当前出口 IP 做了限流。
 
-`seo_audit` supports quick wins, striking-distance queries, low-CTR candidates and possible query cannibalization. `genai_query_insights` is explicitly heuristic: Google/Bing do not expose an official AI Overview / AI Mode / GenAI citation flag through these APIs.
-
-- URL submission: `indexing_submit` supports Google Indexing API, Bing URL Submission and IndexNow.
-- Submission status/quota: `indexing_status` reads Google notification metadata, Bing submission quota or IndexNow key verification.
-
-These URL-submission tools are **enabled whenever their credentials are configured**. There is no separate server-side `WRITE_ENABLED` flag and no `Confirmed=true` parameter. MCP clients may still display their own approval UI because `indexing_submit` is correctly annotated as a write/destructive-capable tool.
-
-## Architecture
+因此项目现在采用「Core + Runtime」结构：
 
 ```text
-ChatGPT / MCP client
-        │ HTTPS + OAuth (PKCE)
-        ▼
-Cloudflare Worker /mcp
-   ├─ OAuth gate + SQLite Durable Object state
-   ├─ Google Search Console REST
-   │    └─ service account / webmasters.readonly
-   ├─ Google Indexing API
-   │    └─ service account / indexing scope
-   ├─ Bing Webmaster Tools REST
-   │    └─ API key + URL Submission
-   ├─ IndexNow
-   │    └─ host key verification
-   └─ PageSpeed Insights REST
+                         Search Console MCP
+                                │
+                    ┌───────────┴───────────┐
+                    │                       │
+             Cloudflare Workers       VPS / OpenAI Tunnel
+             Streamable HTTP MCP          stdio MCP
+                    │                       │
+                    └───────────┬───────────┘
+                                │
+                         同一套 Core Tools
+                                │
+          ┌──────────┬──────────┼──────────┬──────────┐
+          ▼          ▼          ▼          ▼          ▼
+        Google      Bing     PageSpeed   IndexNow   SEO 分析
 ```
 
-External credentials are stored only as Cloudflare Worker Secrets. OAuth authorization codes and refresh tokens used by the MCP client are stored in a SQLite-backed Durable Object and consumed atomically.
+**怎么选？**
 
-## Required secrets
+| 方案 | 适合谁 | 优点 | 注意 |
+| --- | --- | --- | --- |
+| Cloudflare Workers | 想最快上线、不想养服务器 | 免费额度友好、Remote MCP、OAuth 自包含 | Bing 可能遇到共享出口 `ThrottleIP` |
+| VPS + OpenAI Tunnel | 已有 VPS、希望所有外部 API 走自己的公网 IP | 不开公网入站端口、Bing 出口可控、适合长期运行 | 需要运行 tunnel-client |
+
+如果你主要用 Google，Workers 很省事；如果你也重度使用 Bing，**VPS + OpenAI Tunnel 更推荐**。
+
+## 能做什么？
+
+目前提供 17 个 MCP Tools：
+
+| 分类 | Tools |
+| --- | --- |
+| 连接 / 站点 | `connection_status`、`sites_list` |
+| Sitemap | `sitemaps_list` |
+| 搜索表现 | `analytics_query`、`analytics_compare`、`analytics_anomalies` |
+| Google / Bing 对比 | `compare_engines` |
+| URL 检查 | `inspection_inspect` |
+| Bing | `bing_crawl_issues`、`seo_keywords_research` |
+| PageSpeed | `pagespeed_analyze` |
+| SEO 分析 | `seo_audit`、`genai_query_insights` |
+| 技术 SEO | `schema_inspect`、`site_health_check` |
+| 索引通知 | `indexing_status`、`indexing_submit` |
+
+其中 `indexing_submit` 会产生真实外部写操作，可调用：
+
+- Google Indexing API
+- Bing URL Submission
+- IndexNow
+
+> Google 官方仅将 Indexing API 用于带 `JobPosting`，或 `VideoObject` 中嵌入 `BroadcastEvent` 的页面。普通博客页面不属于官方支持场景。HTTP 200 也不代表一定被收录或提升排名。
+
+## 项目结构
+
+```text
+src/
+├── core/                    # 与部署方式无关的业务能力
+│   ├── google.js
+│   ├── bing.js
+│   ├── pagespeed.js
+│   ├── indexing.js
+│   ├── intelligence.js
+│   ├── technical.js
+│   ├── tools.js
+│   └── mcp.js
+└── runtime/
+    ├── worker/              # Cloudflare Workers Remote MCP
+    │   ├── index.js
+    │   ├── oauth.js
+    │   └── oauth-state.js
+    └── stdio.js             # VPS / OpenAI Tunnel
+
+docs/
+├── workers.md
+└── openai-tunnel.md
+```
+
+Core 不知道自己跑在 Worker 还是 VPS。两种运行时最终都调用同一个 `handleMcp()` 和同一组 Tools。
+
+---
+
+## 快速开始 A：Cloudflare Workers
+
+适合第一次体验。
 
 ```bash
-npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON
+git clone https://github.com/fx-k/search-console-mcp-workers.git
+cd search-console-mcp-workers
+
+npm install
+npx wrangler login
+npm run worker:deploy
+```
+
+首次部署后配置 4 个 Secret：
+
+```bash
+npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON < /path/to/google-service-account.json
 npx wrangler secret put BING_API_KEY
 npx wrangler secret put OAUTH_PASSWORD
 npx wrangler secret put OAUTH_JWT_SECRET
 ```
 
-PageSpeed reuses `GOOGLE_SERVICE_ACCOUNT_JSON` through OAuth 2.0. There is no separate PageSpeed API key path.
-
-IndexNow key is public protocol metadata, so it is stored as a normal Worker `[vars]` value rather than a Secret. This deployment uses `INDEXNOW_KEY = "30f6260ce94cd8c82861cdfea9437ba9"` and the root key location `https://<submitted-host>/<INDEXNOW_KEY>.txt`.
-
-### `GOOGLE_SERVICE_ACCOUNT_JSON`
-
-Paste the **entire downloaded service-account JSON file** as the secret value. Do not commit it, upload it to issues, or split the private key into normal `[vars]`.
-
-The service account used for Search Console reads requests:
+如果使用 IndexNow，再在 Cloudflare Worker 的 Variables 中增加公开变量：
 
 ```text
-https://www.googleapis.com/auth/webmasters.readonly
+INDEXNOW_KEY=<你的 IndexNow key>
 ```
 
-Google's Indexing API uses a separate `https://www.googleapis.com/auth/indexing` scope. The same `GOOGLE_SERVICE_ACCOUNT_JSON` identity is used for Search Console and Indexing API, and it must be added as a Search Console **site owner**.
+`wrangler.toml` 已启用 `keep_vars = true`，后续代码部署不会覆盖你在 Dashboard 中维护的普通变量。
 
-PageSpeed Insights reuses the same `GOOGLE_SERVICE_ACCOUNT_JSON` and requests the API's documented `openid` OAuth scope.
-
-## Local checks
-
-```bash
-npm install
-npm run check
-npm test
-npm run build
-```
-
-`npm run build` is a Wrangler dry-run. It does not deploy.
-
-## Deploy
-
-```bash
-npx wrangler login
-npm run deploy
-```
-
-Then configure the secrets above. The Remote MCP URL is:
+部署后的 MCP 地址：
 
 ```text
 https://<worker>.workers.dev/mcp
 ```
 
-`GET /health` only reports configuration presence and process health. It never prints secret values and does not prove the external credentials are valid; verify with `sites_list` after deployment.
+Workers 版本自带 OAuth + PKCE + SQLite Durable Object，不需要额外 OAuth 服务。
 
-## Plugin behavior notes
+完整步骤见：[Cloudflare Workers 部署](docs/workers.md)。
 
-- Bing calls that already have an explicit site URL no longer call `GetUserSites` as a preflight. The Bing API itself remains authoritative for access, which avoids redundant requests and reduces IP-throttle pressure.
-- `indexing_status(method="indexnow")` verifies the root key file directly from `siteUrl`.
-- Google Indexing metadata HTTP 404 is normalized to `notified: false`: it means no prior Indexing API notification metadata exists for that URL, not that Search Console says the URL is unindexed.
+### 关于 Bing 的 `ThrottleIP`
 
-## ChatGPT connection
+Workers 运行方式下，Bing API 的请求从 Cloudflare 出口发出。共享出口 IP 有时会被 Bing Webmaster API 限流，典型错误：
 
-Create a custom Remote MCP / Plugin connection using the Worker `/mcp` URL and OAuth. The Worker publishes OAuth discovery, dynamic client registration, PKCE S256, token refresh, and protected-resource metadata. The authorization page is protected by `OAUTH_PASSWORD`.
+```text
+ERROR!!! ThrottleIP
+```
 
-Start with:
+项目不会通过重试风暴或隐藏错误来“绕过”它。
 
-> Show `connection_status`, then list my verified sites from Google and Bing.
+如果本机 / VPS 使用同一把 Bing API Key 正常，而 Worker 返回 `ThrottleIP`，建议直接切到 VPS + OpenAI Tunnel。
 
-Only after both engines pass should cross-engine comparisons be trusted.
+---
 
+## 快速开始 B：VPS + OpenAI Tunnel
 
-## Intentionally not enabled
+这是推荐的「自有出口 IP」模式。
 
-GA4 and AdSense are supported by the upstream project, but they are not enabled in this Worker by default. This deployment is focused on search/SEO data. GA4 should only be added when a real GA4 property is in use; AdSense additionally requires separate user OAuth because the AdSense Management API does not accept service accounts.
+OpenAI Tunnel 由 VPS **主动向 OpenAI 建立出站 HTTPS 连接**，Tunnel 本身不要求开放公网入站端口。官方 tunnel-client 同时支持 Streamable HTTP 和 stdio；本项目使用更简单的 **stdio** 绑定。
 
-Sitemap deletion, site deletion and other administrative/destructive Webmaster actions are still not exposed.
+### 1. VPS 准备应用
 
-## Security notes
+要求 Node.js 22+：
 
-- `OAUTH_PASSWORD` must be at least 16 characters.
-- `OAUTH_JWT_SECRET` must be an independent random value of at least 32 characters.
-- Keep `CORS_ALLOWED_ORIGINS` exact. Do not replace it with `*`.
-- Google/Bing/API-returned text is untrusted data and is not treated as instructions.
-- `indexing_submit` performs real external writes and is enabled when its credentials are present; there is no extra server-side write toggle.
-- Google officially limits Indexing API usage to pages containing `JobPosting` or `BroadcastEvent` embedded in `VideoObject`; ordinary blog URLs are outside the documented supported use case.
-- Bing/IndexNow accepting a URL notification does not guarantee indexing or ranking.
-- Cloudflare free-tier suitability depends on real request/CPU/storage usage and upstream API quotas; it is not an unlimited-use guarantee.
+```bash
+git clone https://github.com/fx-k/search-console-mcp-workers.git /opt/search-console-mcp
+cd /opt/search-console-mcp
+npm install --omit=dev
+```
 
-See [NOTICE.md](NOTICE.md) for upstream attribution.
+把 Google Service Account JSON 放到：
+
+```text
+/etc/search-console-mcp/google-service-account.json
+```
+
+准备环境变量：
+
+```bash
+export GOOGLE_SERVICE_ACCOUNT_FILE=/etc/search-console-mcp/google-service-account.json
+export BING_API_KEY='你的 Bing Webmaster API Key'
+export INDEXNOW_KEY='你的 IndexNow Key'
+```
+
+可以先直接验证 stdio：
+
+```bash
+npm run stdio
+```
+
+它不会监听公网端口，只通过 stdin/stdout 收发 MCP JSON-RPC。
+
+### 2. 用 OpenAI Tunnel 连接
+
+先按 OpenAI 官方文档安装 `tunnel-client`，然后准备：
+
+```bash
+export CONTROL_PLANE_API_KEY='sk-...'
+export CONTROL_PLANE_TUNNEL_ID='tunnel_...'
+```
+
+推荐先让官方 CLI 生成配置，而不是手写 YAML：
+
+```bash
+tunnel-client init \
+  --sample sample_mcp_stdio_local \
+  --profile search-console-mcp \
+  --tunnel-id "$CONTROL_PLANE_TUNNEL_ID" \
+  --mcp-command "node /opt/search-console-mcp/src/runtime/stdio.js"
+
+tunnel-client doctor --profile search-console-mcp --explain
+tunnel-client run --profile search-console-mcp
+```
+
+Tunnel ready 后，再在 ChatGPT 中选择对应 `tunnel_id` 建立连接。
+
+> stdio 模式下，同一个 tunnel ID 只应运行一个活跃的 tunnel-client 实例，避免 MCP 会话被分发到不同 child process。
+
+完整 VPS / systemd 步骤见：[OpenAI Tunnel 部署](docs/openai-tunnel.md)。
+
+---
+
+## Google 凭据
+
+同一份 Google Service Account 用于：
+
+```text
+Google Search Console → webmasters.readonly
+Google Indexing API   → indexing
+PageSpeed Insights    → OAuth
+```
+
+如果需要 Google Indexing API，该 Service Account 需要在对应 Search Console Property 中具有 Owner 权限。
+
+Workers 使用：
+
+```text
+GOOGLE_SERVICE_ACCOUNT_JSON
+```
+
+Tunnel / VPS 使用：
+
+```text
+GOOGLE_SERVICE_ACCOUNT_FILE
+```
+
+VPS 版本故意只接受文件路径，不再维护“JSON 字符串 / 文件 / Base64”多套兼容配置。
+
+## 一些容易误解的返回值
+
+**Google Indexing status 404**
+
+项目会把“没有历史 Indexing API notification metadata”的 404 表达为：
+
+```json
+{
+  "ok": true,
+  "notified": false
+}
+```
+
+它不等于“Google 没有收录这个 URL”。真实收录状态请用 `inspection_inspect`。
+
+**IndexNow status**
+
+`indexing_status(method="indexnow")` 会实际读取：
+
+```text
+https://<host>/<INDEXNOW_KEY>.txt
+```
+
+并返回 `verificationFetchStatus` 与 `verificationMatches`。
+
+**搜索词缺失**
+
+Search Console / Webmaster API 可能因为隐私或平台规则省略部分 query rows。缺失不等于流量为 0。
+
+## 本地开发
+
+```bash
+npm install
+npm run check
+npm test
+npm run worker:build
+```
+
+Workers 本地开发：
+
+```bash
+npm run worker:dev
+```
+
+Tunnel stdio：
+
+```bash
+GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/key.json \
+BING_API_KEY=... \
+INDEXNOW_KEY=... \
+npm run stdio
+```
+
+CI 会同时检查共享 Core、Workers runtime 和 stdio runtime。
+
+## 安全边界
+
+- Google / Bing / API 返回的 query、URL、title 等全部视为不可信数据，不作为指令执行。
+- Workers Remote MCP 使用 OAuth + PKCE S256；OAuth code / refresh token 状态存放在 SQLite Durable Object。
+- Tunnel 版不暴露额外公网 MCP 端口，连接由 tunnel-client 主动发起。
+- Service Account JSON、Bing API Key、OAuth Secret 等不得提交到仓库。
+- `indexing_submit` 是真实写工具；MCP Client 仍可能根据自身权限策略要求确认。
+
+## OpenAI Tunnel 官方资料
+
+- [openai/tunnel-client](https://github.com/openai/tunnel-client)
+- [Connectors / MCP transports](https://github.com/openai/tunnel-client/blob/master/docs/connectors.md)
+- [VM / systemd deployment](https://github.com/openai/tunnel-client/blob/master/docs/deployment/systemd-vm.md)
+
+## License & Attribution
+
+MIT License。上游与设计来源见 [NOTICE.md](NOTICE.md)。

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detectAnomalies } from '../src/intelligence.js';
+import { detectAnomalies } from '../src/core/intelligence.js';
 
 test('detectAnomalies flags a clear daily outlier', () => {
   const rows = [

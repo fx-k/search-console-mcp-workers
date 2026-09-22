@@ -1,9 +1,9 @@
-import { TOOLS, VERSION } from './tools.js';
+import { TOOLS, VERSION } from '../../core/tools.js';
 import { oauth, verifyAccess, json, escapeHtml } from './oauth.js';
-import { handleMcp, protocols, err } from './mcp.js';
-import { googleConfigured } from './google.js';
-import { bingConfigured } from './bing.js';
-import { pagespeedConfigured } from './pagespeed.js';
+import { handleMcp, protocols, err } from '../../core/mcp.js';
+import { googleConfigured } from '../../core/google.js';
+import { bingConfigured } from '../../core/bing.js';
+import { pagespeedConfigured } from '../../core/pagespeed.js';
 export { OAuthState } from './oauth-state.js';
 
 async function bounded(request) {
@@ -46,13 +46,16 @@ export default {
     if (authResponse) { const out = new Response(authResponse.body, authResponse); for (const [k, v] of Object.entries(cors)) out.headers.set(k, v); return out; }
 
     if (path === '/health') return json({
-      ok: true, version: VERSION, toolCount: TOOLS.length,
+      ok: true,
+      runtime: 'cloudflare-workers',
+      version: VERSION,
+      toolCount: TOOLS.length,
       oauthConfigured: !!env.OAUTH_STATE && !!env.OAUTH_PASSWORD && !!env.OAUTH_JWT_SECRET,
       integrations: { google: googleConfigured(env), bing: bingConfigured(env), pagespeed: pagespeedConfigured(env), googleIndexing: googleConfigured(env), indexNow: !!env.INDEXNOW_KEY },
       writeToolsExposed: true
     }, 200, cors);
 
-    if (path === '/') return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Search Console MCP</title><h1>Search Console MCP v${VERSION}</h1><p>Google Search Console + Bing Webmaster Tools + PageSpeed + URL Submission Remote MCP。</p><p>ChatGPT Remote MCP URL:</p><pre>${escapeHtml(url.origin)}/mcp</pre><ul>${TOOLS.map(t => `<li><code>${t.name}</code> — ${escapeHtml(t.title)}</li>`).join('')}</ul></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff' } });
+    if (path === '/') return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Search Console MCP</title><h1>Search Console MCP v${VERSION}</h1><p>当前运行时：Cloudflare Workers Remote MCP。</p><p>MCP URL:</p><pre>${escapeHtml(url.origin)}/mcp</pre><ul>${TOOLS.map(t => `<li><code>${t.name}</code> — ${escapeHtml(t.title)}</li>`).join('')}</ul></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff' } });
 
     if (['/sse', '/message'].includes(path)) return json({ error: 'legacy_transport_removed', message: '请使用 /mcp Streamable HTTP' }, 410, cors);
     if (path !== '/mcp') return json({ error: 'not_found' }, 404, cors);
