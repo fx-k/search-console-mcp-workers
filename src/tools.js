@@ -1,7 +1,7 @@
 import { validate } from './validation.js';
 import { googleSites, googleSitemaps, googleAnalytics, googleInspect, googleConfigured, resolveGoogleSite } from './google.js';
 import { bingSites, bingSitemaps, bingAnalytics, bingInspect, bingCrawlIssues, bingConfigured, resolveBingSite } from './bing.js';
-import { pagespeedAnalyze, pagespeedConfigured, pagespeedAuthMode } from './pagespeed.js';
+import { pagespeedAnalyze, pagespeedConfigured } from './pagespeed.js';
 import { analyticsCompare, analyticsAnomalies, seoAudit, genaiQueryInsights, keywordResearch } from './intelligence.js';
 import { schemaInspect, siteHealthCheck } from './technical.js';
 import { indexingSubmit, indexingStatus } from './indexing.js';
@@ -107,11 +107,11 @@ export async function callTool(env, name, args = {}) {
   if (name === 'connection_status') return {
     google: { configured: googleConfigured(env), auth: 'service_account', scope: 'webmasters.readonly' },
     bing: { configured: bingConfigured(env), auth: 'api_key' },
-    pagespeed: { configured: pagespeedConfigured(env), auth: pagespeedAuthMode(env), scope: pagespeedAuthMode(env) === 'service_account_oauth' ? 'openid' : null },
+    pagespeed: { configured: pagespeedConfigured(env), auth: 'service_account_oauth', scope: 'openid' },
     indexing: {
-      googleIndexing: { configured: !!(env.GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON || env.GOOGLE_SERVICE_ACCOUNT_JSON), enabled: true },
+      googleIndexing: { configured: googleConfigured(env), enabled: true },
       bingUrlSubmission: { configured: bingConfigured(env), enabled: true },
-      indexNow: { configured: typeof env.INDEXNOW_KEY === 'string' && env.INDEXNOW_KEY.length >= 8, enabled: true, keyLocation: env.INDEXNOW_KEY_LOCATION || null }
+      indexNow: { configured: typeof env.INDEXNOW_KEY === 'string' && env.INDEXNOW_KEY.length >= 8, enabled: true }
     },
     writeToolsExposed: true
   };
