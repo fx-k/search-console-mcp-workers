@@ -77,21 +77,10 @@ export async function googleIndexingSubmit(env, urls, action = 'updated') {
       body: JSON.stringify({ url, type })
     });
     const data = await response.json().catch(() => ({}));
-    if (response.status === 404) {
-      results.push({
-        url,
-        ok: true,
-        status: 404,
-        notified: false,
-        note: 'No prior Google Indexing API notification metadata exists for this URL.'
-      });
-      continue;
-    }
     results.push({
       url,
       ok: response.ok,
       status: response.status,
-      notified: response.ok,
       result: response.ok ? data : undefined,
       error: response.ok ? undefined : (data?.error?.message || response.statusText)
     });
@@ -115,10 +104,21 @@ export async function googleIndexingStatus(env, urls) {
     endpoint.searchParams.set('url', url);
     const response = await fetch(endpoint, { headers: { Authorization: 'Bearer ' + token } });
     const data = await response.json().catch(() => ({}));
+    if (response.status === 404) {
+      results.push({
+        url,
+        ok: true,
+        status: 404,
+        notified: false,
+        note: 'No prior Google Indexing API notification metadata exists for this URL.'
+      });
+      continue;
+    }
     results.push({
       url,
       ok: response.ok,
       status: response.status,
+      notified: response.ok,
       result: response.ok ? data : undefined,
       error: response.ok ? undefined : (data?.error?.message || response.statusText)
     });
