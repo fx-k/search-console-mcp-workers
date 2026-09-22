@@ -51,11 +51,9 @@ npx wrangler secret put OAUTH_JWT_SECRET
 npx wrangler secret put INDEXNOW_KEY
 ```
 
-Optional but recommended for stable PageSpeed quota:
+PageSpeed reuses `GOOGLE_SERVICE_ACCOUNT_JSON` through OAuth 2.0 by default, so no separate PageSpeed API key is required.
 
-```bash
-npx wrangler secret put PAGESPEED_API_KEY
-```
+For compatibility, `PAGESPEED_API_KEY` is still supported as a fallback when no Google service-account JSON is present.
 
 Optional separate Google service-account JSON for Indexing API (if omitted, the Worker falls back to `GOOGLE_SERVICE_ACCOUNT_JSON`):
 
@@ -82,6 +80,8 @@ https://www.googleapis.com/auth/webmasters.readonly
 ```
 
 Google's Indexing API uses a separate `https://www.googleapis.com/auth/indexing` scope. Google documents that the service account used for Indexing API access must be added as a Search Console **site owner**. If `GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON` is not set, the same `GOOGLE_SERVICE_ACCOUNT_JSON` identity is used for both scopes.
+
+PageSpeed Insights reuses the same `GOOGLE_SERVICE_ACCOUNT_JSON` and requests the API's documented `openid` OAuth scope.
 
 ## Local checks
 
