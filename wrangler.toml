@@ -6,6 +6,7 @@ workers_dev = true
 [vars]
 # Browser-based ChatGPT OAuth/MCP requests. Keep this exact; do not use *.
 CORS_ALLOWED_ORIGINS = "https://chatgpt.com"
+INDEXNOW_KEY = "30f6260ce94cd8c82861cdfea9437ba9"
 
 [[durable_objects.bindings]]
 name = "OAUTH_STATE"
