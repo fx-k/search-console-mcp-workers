@@ -41,7 +41,7 @@ services:
       args:
         TUNNEL_CLIENT_VERSION: ${TUNNEL_CLIENT_VERSION:-v0.0.14}
 
-    image: fxit/mcp-search-console:${MCP_IMAGE_TAG:-0.5.0-tunnel-0.0.14}
+    image: fxit/mcp-search-console:${MCP_IMAGE_TAG:-0.5.1-tunnel-0.0.14}
     container_name: mcp-search-console
 
     restart: unless-stopped
