@@ -6,7 +6,7 @@ FROM ghcr.io/openai/tunnel-client:${TUNNEL_CLIENT_VERSION} AS tunnel-client
 FROM node:22-bookworm-slim
 
 LABEL org.opencontainers.image.source="https://github.com/fx-k/search-console-mcp-workers"
-LABEL org.opencontainers.image.description="Search Console MCP + OpenAI tunnel-client"
+LABEL org.opencontainers.image.description="mcp-search-console: Search Console MCP + OpenAI tunnel-client"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tini \
