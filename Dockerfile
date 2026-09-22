@@ -23,8 +23,6 @@ RUN chown -R node:node /app
 ENV NODE_ENV=production \
     HOME=/tmp \
     MCP_COMMAND="node /app/src/runtime/stdio.js" \
-    GOOGLE_SERVICE_ACCOUNT_FILE=/run/secrets/google_service_account \
-    BING_API_KEY_FILE=/run/secrets/bing_api_key \
     HEALTH_LISTEN_ADDR=127.0.0.1:8080 \
     LOG_LEVEL=info \
     LOG_FORMAT=json
@@ -32,4 +30,3 @@ ENV NODE_ENV=production \
 USER node
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/bin/tunnel-client", "run"]
-CMD ["--control-plane.api-key=file:/run/secrets/openai_tunnel_api_key"]
