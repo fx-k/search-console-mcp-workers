@@ -65,12 +65,6 @@ async function accessToken(env) {
   return cachedToken.value;
 }
 
-export function pagespeedAuthMode(env) {
-  if (env.GOOGLE_SERVICE_ACCOUNT_JSON) return 'service_account_oauth';
-  if (env.PAGESPEED_API_KEY) return 'api_key';
-  return 'anonymous';
-}
-
 export async function pagespeedAnalyze(env, inputUrl, strategy = 'mobile') {
   const target = normalizeHttpUrl(inputUrl);
   const url = new URL('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
@@ -78,16 +72,10 @@ export async function pagespeedAnalyze(env, inputUrl, strategy = 'mobile') {
   url.searchParams.set('strategy', strategy);
   url.searchParams.append('category', 'performance');
 
-  const mode = pagespeedAuthMode(env);
-  const headers = {};
-
-  if (mode === 'service_account_oauth') {
-    headers.Authorization = 'Bearer ' + await accessToken(env);
-  } else if (mode === 'api_key') {
-    url.searchParams.set('key', env.PAGESPEED_API_KEY);
-  }
-
-  const response = await fetch(url, { headers });
+  const token = await accessToken(env);
+  const response = await fetch(url, {
+    headers: { Authorization: 'Bearer ' + token }
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(
@@ -111,7 +99,6 @@ export async function pagespeedAnalyze(env, inputUrl, strategy = 'mobile') {
   return {
     id: data.id || target,
     strategy,
-    authMode: mode,
     lighthouseVersion: lr.lighthouseVersion,
     performanceScore: lr.categories?.performance?.score ?? null,
     lab: {
@@ -128,5 +115,10 @@ export async function pagespeedAnalyze(env, inputUrl, strategy = 'mobile') {
 }
 
 export function pagespeedConfigured(env) {
-  return pagespeedAuthMode(env) !== 'anonymous';
+  try {
+    serviceAccount(env);
+    return true;
+  } catch {
+    return false;
+  }
 }
