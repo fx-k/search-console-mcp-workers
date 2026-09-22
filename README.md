@@ -3,48 +3,47 @@
 [![CI](https://github.com/fx-k/search-console-mcp-workers/actions/workflows/ci.yml/badge.svg)](https://github.com/fx-k/search-console-mcp-workers/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-brightgreen)
+![Docker](https://img.shields.io/badge/Docker-supported-2496ED)
 
 > 一个 MCP，把 **Google Search Console、Bing Webmaster Tools、PageSpeed Insights、Google Indexing API 和 IndexNow** 接到 ChatGPT / MCP Client。
 >
-> 同一套核心能力，既可以一键部署到 **Cloudflare Workers**，也可以跑在自己的 **VPS + OpenAI Tunnel** 上。
+> 同一套 Core，支持 **Cloudflare Workers** 和 **Docker + OpenAI Tunnel** 两种生产运行方式。
 
-## 为什么会有两个运行方式？
+## 为什么有两种运行方式？
 
-这个项目一开始只跑在 Cloudflare Workers：部署简单、不需要服务器，也很适合 Remote MCP。
+Cloudflare Workers 部署最省事，但 Bing Webmaster API 对共享出口 IP 可能返回：
 
-但实际使用 Bing Webmaster API 时，Cloudflare Workers 的共享出口 IP **可能**遇到 Bing 返回 `ThrottleIP`。这不是 API Key 失效，而是 Bing 对当前出口 IP 做了限流。
+```text
+ERROR!!! ThrottleIP
+```
 
-因此项目现在采用「Core + Runtime」结构：
+如果你的 VPS 所在网络访问 OpenAI Tunnel 需要代理、但又希望 Bing 仍然使用 VPS 自己的公网 IP，本项目支持**分流出口**：OpenAI Tunnel 控制面走 SOCKS5，Google / Bing / PageSpeed / IndexNow 直连 VPS 出口。
 
 ```text
                          Search Console MCP
                                 │
                     ┌───────────┴───────────┐
                     │                       │
-             Cloudflare Workers       VPS / OpenAI Tunnel
-             Streamable HTTP MCP          stdio MCP
+          Cloudflare Workers      Docker + OpenAI Tunnel
+          Streamable HTTP MCP          stdio MCP
                     │                       │
                     └───────────┬───────────┘
                                 │
-                         同一套 Core Tools
+                          同一套 Core
                                 │
           ┌──────────┬──────────┼──────────┬──────────┐
           ▼          ▼          ▼          ▼          ▼
         Google      Bing     PageSpeed   IndexNow   SEO 分析
 ```
 
-**怎么选？**
+| 方案 | 优点 | 注意 |
+| --- | --- | --- |
+| Cloudflare Workers | 无服务器、部署最快、内置 OAuth | Bing 可能遇到共享出口 `ThrottleIP` |
+| Docker + OpenAI Tunnel | Bing 等 API 使用 VPS 出口；OpenAI Tunnel 控制面可单独走 SOCKS5；不开放 MCP 公网入站端口 | 需要 Docker、OpenAI Tunnel 和可用的 SOCKS5（当 OpenAI 出口需要代理时） |
 
-| 方案 | 适合谁 | 优点 | 注意 |
-| --- | --- | --- | --- |
-| Cloudflare Workers | 想最快上线、不想养服务器 | 免费额度友好、Remote MCP、OAuth 自包含 | Bing 可能遇到共享出口 `ThrottleIP` |
-| VPS + OpenAI Tunnel | 已有 VPS、希望所有外部 API 走自己的公网 IP | 不开公网入站端口、Bing 出口可控、适合长期运行 | 需要运行 tunnel-client |
+如果主要使用 Google，Workers 很方便；如果 Bing 也是核心能力，推荐 **Docker + OpenAI Tunnel**。
 
-如果你主要用 Google，Workers 很省事；如果你也重度使用 Bing，**VPS + OpenAI Tunnel 更推荐**。
-
-## 能做什么？
-
-目前提供 17 个 MCP Tools：
+## 17 个 MCP Tools
 
 | 分类 | Tools |
 | --- | --- |
@@ -59,19 +58,15 @@
 | 技术 SEO | `schema_inspect`、`site_health_check` |
 | 索引通知 | `indexing_status`、`indexing_submit` |
 
-其中 `indexing_submit` 会产生真实外部写操作，可调用：
+`indexing_submit` 会产生真实外部写操作，可调用 Google Indexing API、Bing URL Submission 和 IndexNow。
 
-- Google Indexing API
-- Bing URL Submission
-- IndexNow
-
-> Google 官方仅将 Indexing API 用于带 `JobPosting`，或 `VideoObject` 中嵌入 `BroadcastEvent` 的页面。普通博客页面不属于官方支持场景。HTTP 200 也不代表一定被收录或提升排名。
+> Google 官方仅将 Indexing API 用于带 `JobPosting`，或 `VideoObject` 中嵌入 `BroadcastEvent` 的页面。普通博客页面不属于官方支持场景。
 
 ## 项目结构
 
 ```text
 src/
-├── core/                    # 与部署方式无关的业务能力
+├── core/                       # 与运行平台无关
 │   ├── google.js
 │   ├── bing.js
 │   ├── pagespeed.js
@@ -81,24 +76,19 @@ src/
 │   ├── tools.js
 │   └── mcp.js
 └── runtime/
-    ├── worker/              # Cloudflare Workers Remote MCP
-    │   ├── index.js
-    │   ├── oauth.js
-    │   └── oauth-state.js
-    └── stdio.js             # VPS / OpenAI Tunnel
+    ├── worker/                 # Cloudflare Workers
+    └── stdio.js                # OpenAI Tunnel child process
 
-docs/
-├── workers.md
-└── openai-tunnel.md
+Dockerfile
+docker-compose.yml
+.env.example
 ```
 
-Core 不知道自己跑在 Worker 还是 VPS。两种运行时最终都调用同一个 `handleMcp()` 和同一组 Tools。
+两种 runtime 最终都进入同一个 `handleMcp()`，不会维护两套 Google/Bing 业务逻辑。
 
 ---
 
-## 快速开始 A：Cloudflare Workers
-
-适合第一次体验。
+## 方案 A：Cloudflare Workers
 
 ```bash
 git clone https://github.com/fx-k/search-console-mcp-workers.git
@@ -109,7 +99,7 @@ npx wrangler login
 npm run worker:deploy
 ```
 
-首次部署后配置 4 个 Secret：
+配置 Secret：
 
 ```bash
 npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON < /path/to/google-service-account.json
@@ -118,109 +108,162 @@ npx wrangler secret put OAUTH_PASSWORD
 npx wrangler secret put OAUTH_JWT_SECRET
 ```
 
-如果使用 IndexNow，再在 Cloudflare Worker 的 Variables 中增加公开变量：
+IndexNow key 是公开验证值，可在 Worker Variables 中配置：
 
 ```text
 INDEXNOW_KEY=<你的 IndexNow key>
 ```
 
-`wrangler.toml` 已启用 `keep_vars = true`，后续代码部署不会覆盖你在 Dashboard 中维护的普通变量。
-
-部署后的 MCP 地址：
+MCP URL：
 
 ```text
 https://<worker>.workers.dev/mcp
 ```
 
-Workers 版本自带 OAuth + PKCE + SQLite Durable Object，不需要额外 OAuth 服务。
+完整说明：[Cloudflare Workers 部署](docs/workers.md)
 
-完整步骤见：[Cloudflare Workers 部署](docs/workers.md)。
+### Bing `ThrottleIP`
 
-### 关于 Bing 的 `ThrottleIP`
-
-Workers 运行方式下，Bing API 的请求从 Cloudflare 出口发出。共享出口 IP 有时会被 Bing Webmaster API 限流，典型错误：
+Workers 对 Bing 的请求由 Cloudflare 出口发出。如果同一把 Bing API Key：
 
 ```text
-ERROR!!! ThrottleIP
+本机 / VPS       → Bing ✅
+Cloudflare Worker → Bing ❌ ThrottleIP
 ```
 
-项目不会通过重试风暴或隐藏错误来“绕过”它。
+说明问题在共享出口 IP，不是 API Key 或站点权限。
 
-如果本机 / VPS 使用同一把 Bing API Key 正常，而 Worker 返回 `ThrottleIP`，建议直接切到 VPS + OpenAI Tunnel。
+项目不会用重试风暴或隐藏错误来绕过它；请直接切换到 Docker + OpenAI Tunnel。
 
 ---
 
-## 快速开始 B：VPS + OpenAI Tunnel
+## 方案 B：Docker + OpenAI Tunnel
 
-这是推荐的「自有出口 IP」模式。
+这是 VPS 推荐部署方式。宿主机**不需要安装 Node/npm**。
 
-OpenAI Tunnel 由 VPS **主动向 OpenAI 建立出站 HTTPS 连接**，Tunnel 本身不要求开放公网入站端口。官方 tunnel-client 同时支持 Streamable HTTP 和 stdio；本项目使用更简单的 **stdio** 绑定。
-
-### 1. VPS 准备应用
-
-要求 Node.js 22+：
-
-```bash
-git clone https://github.com/fx-k/search-console-mcp-workers.git /opt/search-console-mcp
-cd /opt/search-console-mcp
-npm install --omit=dev
-```
-
-把 Google Service Account JSON 放到：
+目录建议统一以 `mcp-` 开头：
 
 ```text
-/etc/search-console-mcp/google-service-account.json
+~/FXIT-dockerdata/mcp-search-console/
 ```
 
-准备环境变量：
+### 1. Clone
 
 ```bash
-export GOOGLE_SERVICE_ACCOUNT_FILE=/etc/search-console-mcp/google-service-account.json
-export BING_API_KEY='你的 Bing Webmaster API Key'
-export INDEXNOW_KEY='你的 IndexNow Key'
+cd ~/FXIT-dockerdata
+git clone https://github.com/fx-k/search-console-mcp-workers.git mcp-search-console
+cd mcp-search-console
 ```
 
-可以先直接验证 stdio：
+### 2. 准备配置
 
 ```bash
-npm run stdio
+cp .env.example .env
+mkdir -p secrets
+chmod 700 secrets
 ```
 
-它不会监听公网端口，只通过 stdin/stdout 收发 MCP JSON-RPC。
+需要准备三个私密文件：
 
-### 2. 用 OpenAI Tunnel 连接
+```text
+secrets/
+├── google-service-account.json
+├── bing-api-key
+└── openai-tunnel-api-key
+```
 
-先按 OpenAI 官方文档安装 `tunnel-client`，然后准备：
+其中：
+
+- `google-service-account.json`：完整 Google Service Account JSON
+- `bing-api-key`：只放 Bing API Key 本身
+- `openai-tunnel-api-key`：只放 OpenAI Tunnel Runtime API Key 本身
+
+然后编辑 `.env`：
+
+```dotenv
+# 只给 OpenAI Tunnel control-plane 使用
+SOCKS5_UPSTREAM=socks5://user:password@proxy.example.com:1080
+
+CONTROL_PLANE_TUNNEL_ID=tunnel_xxx
+INDEXNOW_KEY=your-public-indexnow-key
+TUNNEL_CLIENT_VERSION=v0.0.14
+MCP_IMAGE_TAG=0.5.0-tunnel-0.0.14
+```
+
+`INDEXNOW_KEY` 是公开验证值，不属于 Secret。
+
+### 3. 启动
 
 ```bash
-export CONTROL_PLANE_API_KEY='sk-...'
-export CONTROL_PLANE_TUNNEL_ID='tunnel_...'
+docker compose build
+docker compose up -d
 ```
 
-推荐先让官方 CLI 生成配置，而不是手写 YAML：
+检查：
 
 ```bash
-tunnel-client init \
-  --sample sample_mcp_stdio_local \
-  --profile search-console-mcp \
-  --tunnel-id "$CONTROL_PLANE_TUNNEL_ID" \
-  --mcp-command "node /opt/search-console-mcp/src/runtime/stdio.js"
-
-tunnel-client doctor --profile search-console-mcp --explain
-tunnel-client run --profile search-console-mcp
+docker compose ps
+docker compose logs --tail=100
+docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/healthz
+docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/readyz
 ```
 
-Tunnel ready 后，再在 ChatGPT 中选择对应 `tunnel_id` 建立连接。
+容器名、Compose project 和 image 都统一使用：
 
-> stdio 模式下，同一个 tunnel ID 只应运行一个活跃的 tunnel-client 实例，避免 MCP 会话被分发到不同 child process。
+```text
+mcp-search-console
+```
 
-完整 VPS / systemd 步骤见：[OpenAI Tunnel 部署](docs/openai-tunnel.md)。
+### 分流出口：Tunnel 走 SOCKS5，搜索 API 走 VPS IP
+
+Compose 会启动两个容器：
+
+```text
+mcp-search-console-egress
+└─ gost：HTTP CONNECT → SOCKS5_UPSTREAM
+
+mcp-search-console
+├─ tunnel-client
+└─ Search Console MCP (stdio)
+```
+
+只有 tunnel-client 的 **OpenAI control-plane** 被显式设置：
+
+```text
+CONTROL_PLANE_HTTP_PROXY=http://egress-proxy:18080
+```
+
+没有设置全局 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`。
+
+因此真实流量是：
+
+```text
+OpenAI Tunnel control-plane
+mcp-search-console
+      ↓
+egress-proxy
+      ↓
+SOCKS5_UPSTREAM
+      ↓
+api.openai.com
+
+Bing / Google / PageSpeed / IndexNow
+mcp-search-console
+      ↓
+Docker NAT
+      ↓
+VPS 公网出口
+```
+
+也就是说，即使 OpenAI Tunnel 需要 SOCKS5，Bing 仍然看到 VPS 自己的公网 IP。
+
+完整说明：[Docker + OpenAI Tunnel 部署](docs/openai-tunnel.md)
 
 ---
 
 ## Google 凭据
 
-同一份 Google Service Account 用于：
+同一个 Service Account 用于：
 
 ```text
 Google Search Console → webmasters.readonly
@@ -228,27 +271,27 @@ Google Indexing API   → indexing
 PageSpeed Insights    → OAuth
 ```
 
-如果需要 Google Indexing API，该 Service Account 需要在对应 Search Console Property 中具有 Owner 权限。
+如果使用 Google Indexing API，该 Service Account 需要在对应 Search Console Property 中具有 Owner 权限。
 
-Workers 使用：
+Workers 使用 Secret：
 
 ```text
 GOOGLE_SERVICE_ACCOUNT_JSON
 ```
 
-Tunnel / VPS 使用：
+Docker / Tunnel 使用 Docker secret file：
 
 ```text
-GOOGLE_SERVICE_ACCOUNT_FILE
+/run/secrets/google_service_account
 ```
 
-VPS 版本故意只接受文件路径，不再维护“JSON 字符串 / 文件 / Base64”多套兼容配置。
+只保留一种 Docker 凭据输入方式，不提供 JSON/Base64/文件多套 fallback。
 
-## 一些容易误解的返回值
+## 容易误解的状态
 
-**Google Indexing status 404**
+### Google Indexing status 404
 
-项目会把“没有历史 Indexing API notification metadata”的 404 表达为：
+没有历史 Indexing API notification metadata 时，项目返回：
 
 ```json
 {
@@ -257,61 +300,62 @@ VPS 版本故意只接受文件路径，不再维护“JSON 字符串 / 文件 /
 }
 ```
 
-它不等于“Google 没有收录这个 URL”。真实收录状态请用 `inspection_inspect`。
+它不等于“Google 没收录”。真实收录状态请用 `inspection_inspect`。
 
-**IndexNow status**
+### IndexNow status
 
-`indexing_status(method="indexnow")` 会实际读取：
+`indexing_status(method="indexnow")` 会读取：
 
 ```text
 https://<host>/<INDEXNOW_KEY>.txt
 ```
 
-并返回 `verificationFetchStatus` 与 `verificationMatches`。
+并返回：
 
-**搜索词缺失**
+```text
+verificationFetchStatus
+verificationMatches
+```
+
+### 搜索词缺失
 
 Search Console / Webmaster API 可能因为隐私或平台规则省略部分 query rows。缺失不等于流量为 0。
 
-## 本地开发
+## 开发与 CI
 
 ```bash
 npm install
 npm run check
 npm test
 npm run worker:build
+docker compose config
+docker build --build-arg TUNNEL_CLIENT_VERSION=v0.0.14 -t mcp-search-console:test .
 ```
 
-Workers 本地开发：
+CI 同时检查：
 
-```bash
-npm run worker:dev
-```
-
-Tunnel stdio：
-
-```bash
-GOOGLE_SERVICE_ACCOUNT_FILE=/path/to/key.json \
-BING_API_KEY=... \
-INDEXNOW_KEY=... \
-npm run stdio
-```
-
-CI 会同时检查共享 Core、Workers runtime 和 stdio runtime。
+- Shared Core
+- Cloudflare Workers runtime
+- stdio runtime
+- Docker Compose
+- Docker image
 
 ## 安全边界
 
-- Google / Bing / API 返回的 query、URL、title 等全部视为不可信数据，不作为指令执行。
-- Workers Remote MCP 使用 OAuth + PKCE S256；OAuth code / refresh token 状态存放在 SQLite Durable Object。
-- Tunnel 版不暴露额外公网 MCP 端口，连接由 tunnel-client 主动发起。
-- Service Account JSON、Bing API Key、OAuth Secret 等不得提交到仓库。
-- `indexing_submit` 是真实写工具；MCP Client 仍可能根据自身权限策略要求确认。
+- API 返回的 query、URL、title 等全部视为不可信数据，不作为指令执行。
+- Workers 使用 OAuth + PKCE S256 + SQLite Durable Object。
+- Docker Tunnel 不开放 MCP 公网入站端口；tunnel-client 主动连接 OpenAI。
+- Google JSON、Bing API Key、Tunnel Runtime API Key 均通过文件注入，不提交 Git。
+- Docker 容器默认 `read_only`、drop all capabilities、`no-new-privileges`。
+- `indexing_submit` 是真实写工具，MCP Client 仍可能按自身策略要求确认。
 
-## OpenAI Tunnel 官方资料
+## OpenAI Tunnel
+
+本项目默认 pin `v0.0.14`。升级前建议先阅读 OpenAI tunnel-client release notes。
 
 - [openai/tunnel-client](https://github.com/openai/tunnel-client)
-- [Connectors / MCP transports](https://github.com/openai/tunnel-client/blob/master/docs/connectors.md)
-- [VM / systemd deployment](https://github.com/openai/tunnel-client/blob/master/docs/deployment/systemd-vm.md)
+- [Docker deployment](https://github.com/openai/tunnel-client/blob/master/docs/deployment/docker.md)
+- [MCP connectors](https://github.com/openai/tunnel-client/blob/master/docs/connectors.md)
 
 ## License & Attribution
 

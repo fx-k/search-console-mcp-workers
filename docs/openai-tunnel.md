@@ -1,10 +1,8 @@
-# VPS + OpenAI Tunnel 部署
+# Docker + OpenAI Tunnel 部署
 
-适合希望 Search Console MCP 从**自己的服务器公网 IP**访问 Google / Bing 的场景。
+这是 VPS 推荐方案，宿主机不需要安装 Node/npm。
 
-尤其当 Cloudflare Workers 调 Bing Webmaster API 遇到 `ThrottleIP` 时，这种部署方式更合适。
-
-## 网络模型
+## 架构
 
 ```text
 ChatGPT
@@ -12,191 +10,299 @@ ChatGPT
    ▼
 OpenAI Tunnel Service
    ▲
-   │ VPS 主动发起 HTTPS 连接
+   │ outbound HTTPS
    │
-VPS: tunnel-client
-   │ stdio
-   ▼
-Search Console MCP
-   │
-   ├─ Google
-   ├─ Bing  ← Bing 看到的是 VPS 出口 IP
-   ├─ PageSpeed
-   └─ IndexNow
+VPS / Docker
+├─ mcp-search-console-egress
+│    └─ gost → SOCKS5_UPSTREAM → OpenAI
+│
+└─ mcp-search-console
+     ├─ tunnel-client ──────────→ egress-proxy → OpenAI control-plane
+     │      │ stdio
+     │      ▼
+     └─ Search Console MCP
+            ├─ Google ──────────→ Docker NAT → VPS IP
+            ├─ Bing ────────────→ Docker NAT → VPS IP
+            ├─ PageSpeed ───────→ Docker NAT → VPS IP
+            └─ IndexNow ────────→ Docker NAT → VPS IP
 ```
 
-OpenAI tunnel-client 官方要求 VPS 能出站访问：
+这是**分流出口**：OpenAI Tunnel 控制面走 SOCKS5；MCP 自己调用搜索平台 API 时不走代理，所以 Bing 看到的仍是 VPS 公网出口 IP。
+
+## 1. 创建目录
+
+推荐与其它 MCP Docker 服务保持一致：
+
+```bash
+cd ~/FXIT-dockerdata
+git clone https://github.com/fx-k/search-console-mcp-workers.git mcp-search-console
+cd mcp-search-console
+```
+
+## 2. 准备配置目录
+
+```bash
+cp .env.example .env
+mkdir -p secrets
+chmod 700 secrets
+```
+
+最终目录：
 
 ```text
-api.openai.com:443
-/v1/tunnels/*
+mcp-search-console/
+├── Dockerfile
+├── docker-compose.yml
+├── .env
+└── secrets/
+    ├── google-service-account.json
+    ├── bing-api-key
+    └── openai-tunnel-api-key
 ```
 
-Tunnel 本身**不要求开放公网入站端口**。
+`secrets/` 已被 Git 和 Docker build context 排除。
 
-## 1. 安装应用
+## 3. Google Service Account
 
-以下路径只是推荐值：
-
-```bash
-sudo mkdir -p /opt/search-console-mcp /etc/search-console-mcp
-
-git clone https://github.com/fx-k/search-console-mcp-workers.git /opt/search-console-mcp
-cd /opt/search-console-mcp
-
-npm install --omit=dev
-```
-
-要求 Node.js 22+。
-
-## 2. 放置 Google Service Account
+把完整 JSON 保存为：
 
 ```text
-/etc/search-console-mcp/google-service-account.json
+secrets/google-service-account.json
 ```
 
-建议权限：
+建议：
 
 ```bash
-sudo chmod 600 /etc/search-console-mcp/google-service-account.json
+chmod 600 secrets/google-service-account.json
 ```
 
-Tunnel runtime 只读取 `GOOGLE_SERVICE_ACCOUNT_FILE`，不会同时维护 JSON 字符串、Base64 等备用配置。
+## 4. Bing API Key
 
-## 3. 准备 MCP 环境
+安全输入，避免进入 shell history：
 
 ```bash
-export GOOGLE_SERVICE_ACCOUNT_FILE=/etc/search-console-mcp/google-service-account.json
-export BING_API_KEY='your-bing-api-key'
-export INDEXNOW_KEY='your-indexnow-key'
+read -rsp "Bing API Key: " BING_API_KEY
+echo
+printf '%s' "$BING_API_KEY" > secrets/bing-api-key
+unset BING_API_KEY
+chmod 600 secrets/bing-api-key
 ```
 
-其中：
-
-- Google 文件：必需
-- Bing key：只在使用 Bing 时需要
-- IndexNow key：只在使用 IndexNow 时需要，而且它本身是公开验证值
-
-先验证 stdio 能启动：
-
-```bash
-cd /opt/search-console-mcp
-npm run stdio
-```
-
-看到 stderr：
+容器内部只读取：
 
 ```text
-[search-console-mcp] stdio runtime ready
+/run/secrets/bing_api_key
 ```
 
-即说明 runtime 已就绪。它不会监听 TCP 端口。
+## 5. OpenAI Tunnel
 
-## 4. 安装 OpenAI tunnel-client
+在 OpenAI Platform 创建 / 选择 Tunnel，并取得：
 
-使用 OpenAI 官方提供的 tunnel-client 版本与安装方法：
+- Tunnel ID
+- Runtime API Key
 
-- https://github.com/openai/tunnel-client
-- https://github.com/openai/tunnel-client/blob/master/docs/onboarding.md
-
-准备 runtime key 与 tunnel id：
+将 Runtime API Key 写入：
 
 ```bash
-export CONTROL_PLANE_API_KEY='sk-...'
-export CONTROL_PLANE_TUNNEL_ID='tunnel_...'
+read -rsp "OpenAI Tunnel Runtime API Key: " OPENAI_TUNNEL_API_KEY
+echo
+printf '%s' "$OPENAI_TUNNEL_API_KEY" > secrets/openai-tunnel-api-key
+unset OPENAI_TUNNEL_API_KEY
+chmod 600 secrets/openai-tunnel-api-key
 ```
 
-注意不要把 Admin Key 当 runtime key 长期放在服务里。
+然后编辑 `.env`：
 
-## 5. 创建 stdio profile
+```dotenv
+SOCKS5_UPSTREAM=socks5://user:password@proxy.example.com:1080
+CONTROL_PLANE_TUNNEL_ID=tunnel_xxx
+INDEXNOW_KEY=
+TUNNEL_CLIENT_VERSION=v0.0.14
+MCP_IMAGE_TAG=0.5.0-tunnel-0.0.14
+```
 
-官方 CLI 支持 `sample_mcp_stdio_local`：
+如果使用 IndexNow，把公开 key 填入 `INDEXNOW_KEY`。
+
+## 6. Build
 
 ```bash
-tunnel-client init \
-  --sample sample_mcp_stdio_local \
-  --profile search-console-mcp \
-  --tunnel-id "$CONTROL_PLANE_TUNNEL_ID" \
-  --mcp-command "node /opt/search-console-mcp/src/runtime/stdio.js"
+docker compose build
+```
+
+镜像由两部分组成：
+
+```text
+ghcr.io/openai/tunnel-client:v0.0.14
+                +
+node:22-bookworm-slim
+                ↓
+fxit/mcp-search-console:0.5.0-tunnel-0.0.14
+```
+
+tunnel-client 使用官方 release image 中的二进制；MCP 使用 Node 22。
+
+## 7. 启动
+
+```bash
+docker compose up -d
 ```
 
 检查：
 
 ```bash
-tunnel-client doctor --profile search-console-mcp --explain
+docker compose ps
+docker compose logs --tail=100
 ```
 
-运行：
-
-```bash
-tunnel-client run --profile search-console-mcp
-```
-
-默认健康检查可从 VPS 本机访问：
-
-```bash
-curl -fsS http://127.0.0.1:8080/healthz
-curl -fsS http://127.0.0.1:8080/readyz
-```
-
-只有 Tunnel ready 后再去 ChatGPT 测 Tools。
-
-## 6. systemd 长期运行
-
-仓库提供：
-
-- `deploy/systemd/search-console-mcp.env.example`
-- `deploy/systemd/search-console-mcp-tunnel.service.example`
-
-建议创建专用系统用户，并确保：
+容器应为：
 
 ```text
-/etc/search-console-mcp/google-service-account.json
-/etc/search-console-mcp/search-console-mcp.env
-/etc/search-console-mcp/openai-tunnel-api-key
+mcp-search-console
 ```
 
-只有该服务用户和 root 可读。
-
-启用服务：
+## 8. Health
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now search-console-mcp-tunnel
-sudo systemctl status search-console-mcp-tunnel
+docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/healthz
+echo
+
+docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/readyz
+echo
 ```
 
-日志：
+进一步诊断：
 
 ```bash
-journalctl -u search-console-mcp-tunnel -f
+docker exec mcp-search-console curl -fsS 'http://127.0.0.1:8080/health?details=true'
+echo
+
+docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/health/mcp
+echo
 ```
 
-## stdio 的部署约束
+OpenAI 官方说明：`/readyz` ready 只代表启动 readiness；stdio MCP 的真实 discovery 是否被观察到，可看 `/health/mcp`。
 
-OpenAI 官方 tunnel-client 文档明确说明：使用 stdio binding 时，同一个 tunnel ID 不应同时运行多个活跃 tunnel-client 实例。
+## 9. 为什么没有端口映射？
 
-因此不要对同一个 `tunnel_id` 做“双机同时在线”或重叠式滚动重启。
+Compose 没有：
 
-这也是 systemd 模式建议：
+```yaml
+ports:
+  - ...
+```
+
+这是故意的。
+
+Tunnel client 和 ChatGPT 的连接由容器主动向 OpenAI 建立，不需要把 MCP server 暴露到公网。
+
+health endpoint 只在容器内部 loopback：
 
 ```text
-一个 tunnel ID
-     ↓
-一个 tunnel-client
-     ↓
-一个 Search Console MCP stdio child
+127.0.0.1:8080
 ```
 
-## 为什么 Bing 在这里更稳定？
+Docker healthcheck 直接从容器内部检查。
 
-Cloudflare Workers 模式的 Bing 请求从 Cloudflare 出口发出；Tunnel 模式下，`bing.js` 实际由 VPS 上的 Node.js 进程执行，因此 Bing 看到的是 VPS 的公网出口 IP。
+## 10. 分流代理为什么不会改变 Bing 出口？
 
-Tunnel 并不代理你 MCP 对 Bing 的出站流量：
+`egress-proxy` 只服务于 OpenAI Tunnel control-plane。
+
+Compose 对 tunnel-client 设置：
 
 ```text
-OpenAI Tunnel：负责 ChatGPT → VPS MCP
-VPS 网络：负责 VPS MCP → Bing
+CONTROL_PLANE_HTTP_PROXY=http://egress-proxy:18080
 ```
 
-所以它正好适合解决共享出口 IP 被 Bing `ThrottleIP` 的情况。
+OpenAI 官方 tunnel-client 会将 control-plane 请求显式送入这个 HTTP proxy。stdio MCP binding 本身不使用 MCP HTTP proxy，而且本项目没有设置全局 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`。
+
+因此：
+
+```text
+Tunnel → gost → SOCKS5 → OpenAI
+MCP    → Docker NAT → VPS public IP → Bing/Google/PageSpeed
+```
+
+启动后先验证容器看到的直连出口：
+
+```bash
+docker exec mcp-search-console curl -4 -sS https://api.ipify.org
+echo
+```
+
+它应与宿主机：
+
+```bash
+curl -4 -sS https://api.ipify.org
+echo
+```
+
+一致。
+
+然后可以在容器内直接验证 Bing，读取 Docker secret 而不把 Key 打印出来：
+
+```bash
+docker exec mcp-search-console sh -lc '
+  KEY="$(cat /run/secrets/bing_api_key)"
+  curl -4 -sS -G "https://ssl.bing.com/webmaster/api.svc/json/GetUrlSubmissionQuota" \
+    --data-urlencode "apikey=$KEY" \
+    --data-urlencode "siteUrl=https://keke.su/"
+'
+```
+
+如果这里正常，而 tunnel-client 日志也显示已连接 OpenAI，就说明两条出口都按预期分流。
+
+## 11. 更新
+
+```bash
+cd ~/FXIT-dockerdata/mcp-search-console
+git pull --ff-only
+docker compose build --pull
+docker compose up -d
+docker image prune -f
+```
+
+## 12. 停止 / 删除容器
+
+只停止：
+
+```bash
+docker compose stop
+```
+
+删除容器和 Compose network：
+
+```bash
+docker compose down
+```
+
+不会删除：
+
+- `.env`
+- `secrets/`
+- Git 仓库
+
+如果要彻底退役，再手工删除这些文件。
+
+## 安全设置
+
+Compose 默认：
+
+```text
+read_only: true
+cap_drop: ALL
+no-new-privileges
+tmpfs /tmp
+pids_limit
+memory limit
+log rotation
+Docker secrets
+```
+
+OpenAI Tunnel Runtime API Key、Bing API Key、Google Service Account 都不放进 `.env`。
+
+## OpenAI 官方资料
+
+- https://github.com/openai/tunnel-client
+- https://github.com/openai/tunnel-client/blob/master/docs/deployment/docker.md
+- https://github.com/openai/tunnel-client/blob/master/docs/connectors.md
+- https://github.com/openai/tunnel-client/blob/master/docs/health.md

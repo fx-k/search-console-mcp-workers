@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+dist
+.wrangler
+.env
+.env.*
+secrets
+test
+docs
+deploy
+*.log
