@@ -1,31 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { createTunnelEnv, handleStdioLine } from '../src/runtime/stdio.js';
 
-test('Tunnel runtime loads Google credentials from one file path', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'search-console-mcp-'));
-  const file = path.join(dir, 'google.json');
-  fs.writeFileSync(file, JSON.stringify({
-    client_email: 'mcp@example.iam.gserviceaccount.com',
-    private_key: 'dummy'
-  }));
-  try {
-    const bingFile = path.join(dir, 'bing-key');
-    fs.writeFileSync(bingFile, 'bing-key\n');
-    const env = createTunnelEnv({
-      GOOGLE_SERVICE_ACCOUNT_FILE: file,
-      BING_API_KEY_FILE: bingFile,
-      INDEXNOW_KEY: 'abcDEF12-3456'
-    });
-    assert.equal(JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON).client_email, 'mcp@example.iam.gserviceaccount.com');
-    assert.equal(env.BING_API_KEY, 'bing-key');
-    assert.equal(env.INDEXNOW_KEY, 'abcDEF12-3456');
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+test('Tunnel runtime loads credentials from environment', () => {
+  const env = createTunnelEnv({
+    GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify({
+      client_email: 'mcp@example.iam.gserviceaccount.com',
+      private_key: 'dummy'
+    }),
+    BING_API_KEY: 'bing-key',
+    INDEXNOW_KEY: 'abcDEF12-3456'
+  });
+  assert.equal(JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON).client_email, 'mcp@example.iam.gserviceaccount.com');
+  assert.equal(env.BING_API_KEY, 'bing-key');
+  assert.equal(env.INDEXNOW_KEY, 'abcDEF12-3456');
+});
+
+test('Tunnel runtime rejects invalid Google service-account JSON', () => {
+  assert.throws(
+    () => createTunnelEnv({ GOOGLE_SERVICE_ACCOUNT_JSON: '{bad}' }),
+    /不是有效 JSON/
+  );
 });
 
 test('stdio line dispatcher uses the shared MCP core', async () => {
