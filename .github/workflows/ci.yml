@@ -20,9 +20,5 @@ jobs:
       - name: Validate Docker Compose
         run: |
           cp .env.example .env
-          mkdir -p secrets
-          printf '{}' > secrets/google-service-account.json
-          printf 'test-bing-key' > secrets/bing-api-key
-          printf 'test-openai-key' > secrets/openai-tunnel-api-key
           SOCKS5_UPSTREAM=socks5://127.0.0.1:1080 docker compose config
       - run: docker build --build-arg TUNNEL_CLIENT_VERSION=v0.0.14 -t mcp-search-console:test .

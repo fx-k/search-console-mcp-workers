@@ -157,40 +157,33 @@ cd mcp-search-console
 
 ### 2. 准备配置
 
+Docker Tunnel 路线与本项目的 `mcp-esa` 部署风格一致：**一个 root-only `.env`，容器始终以非 root 用户运行**。
+
 ```bash
 cp .env.example .env
-mkdir -p secrets
-chmod 700 secrets
+chmod 600 .env
 ```
 
-需要准备三个私密文件：
-
-```text
-secrets/
-├── google-service-account.json
-├── bing-api-key
-└── openai-tunnel-api-key
-```
-
-其中：
-
-- `google-service-account.json`：完整 Google Service Account JSON
-- `bing-api-key`：只放 Bing API Key 本身
-- `openai-tunnel-api-key`：只放 OpenAI Tunnel Runtime API Key 本身
-
-然后编辑 `.env`：
+编辑 `.env`：
 
 ```dotenv
+CONTROL_PLANE_TUNNEL_ID=tunnel_xxx
+CONTROL_PLANE_API_KEY=sk-your-runtime-api-key
+
+GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+BING_API_KEY=your-bing-api-key
+INDEXNOW_KEY=your-public-indexnow-key
+
 # 只给 OpenAI Tunnel control-plane 使用
 SOCKS5_UPSTREAM=socks5://user:password@proxy.example.com:1080
 
-CONTROL_PLANE_TUNNEL_ID=tunnel_xxx
-INDEXNOW_KEY=your-public-indexnow-key
 TUNNEL_CLIENT_VERSION=v0.0.14
-MCP_IMAGE_TAG=0.5.0-tunnel-0.0.14
+MCP_IMAGE_TAG=0.5.1-tunnel-0.0.14
 ```
 
-`INDEXNOW_KEY` 是公开验证值，不属于 Secret。
+Google Service Account JSON 必须压成**单行 JSON**；推荐用单引号包住整段值。项目不再同时维护 JSON 文件 / Base64 / Docker secret 等多套输入路径。
+
+`INDEXNOW_KEY` 是公开验证值，其余凭据都应视为 Secret。`.env` 已被 Git 忽略。
 
 ### 3. 启动
 
@@ -279,13 +272,13 @@ Workers 使用 Secret：
 GOOGLE_SERVICE_ACCOUNT_JSON
 ```
 
-Docker / Tunnel 使用 Docker secret file：
+Docker / Tunnel 使用同一个环境变量：
 
 ```text
-/run/secrets/google_service_account
+GOOGLE_SERVICE_ACCOUNT_JSON
 ```
 
-只保留一种 Docker 凭据输入方式，不提供 JSON/Base64/文件多套 fallback。
+与 `mcp-esa` 一样，由 root-only `.env` 注入给非 root 容器；不再维护文件挂载 / Base64 / Docker secret 等备用路径。
 
 ## 容易误解的状态
 
@@ -345,7 +338,9 @@ CI 同时检查：
 - API 返回的 query、URL、title 等全部视为不可信数据，不作为指令执行。
 - Workers 使用 OAuth + PKCE S256 + SQLite Durable Object。
 - Docker Tunnel 不开放 MCP 公网入站端口；tunnel-client 主动连接 OpenAI。
-- Google JSON、Bing API Key、Tunnel Runtime API Key 均通过文件注入，不提交 Git。
+- Google JSON、Bing API Key、Tunnel Runtime API Key 存在 root-only `.env` 中，不提交 Git；`.env` 建议权限 `600`。
+- 和 `mcp-esa` 一样，容器从启动到运行始终使用非 root 用户；不需要 root entrypoint 或启动后降权。
+- Docker/root 权限本身等价于主机高权限，因此具备 Docker 管理权限的人可以读取容器环境变量；单机 root 管理 VPS 下这与现有 `mcp-esa` 的信任边界一致。
 - Docker 容器默认 `read_only`、drop all capabilities、`no-new-privileges`。
 - `indexing_submit` 是真实写工具，MCP Client 仍可能按自身策略要求确认。
 

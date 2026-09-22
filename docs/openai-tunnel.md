@@ -1,6 +1,11 @@
 # Docker + OpenAI Tunnel 部署
 
-这是 VPS 推荐方案，宿主机不需要安装 Node/npm。
+这是 VPS 推荐方案，宿主机不需要安装 Node/npm。部署风格与 `mcp-esa` 保持一致：
+
+- 一个 root-only `.env`
+- 容器始终以非 root `node` 用户运行
+- OpenAI Tunnel control-plane 可单独走 SOCKS5
+- Bing / Google / PageSpeed / IndexNow 仍直接走 VPS 出口
 
 ## 架构
 
@@ -10,14 +15,13 @@ ChatGPT
    ▼
 OpenAI Tunnel Service
    ▲
-   │ outbound HTTPS
    │
 VPS / Docker
 ├─ mcp-search-console-egress
 │    └─ gost → SOCKS5_UPSTREAM → OpenAI
 │
-└─ mcp-search-console
-     ├─ tunnel-client ──────────→ egress-proxy → OpenAI control-plane
+└─ mcp-search-console (USER node)
+     ├─ tunnel-client ──────────→ CONTROL_PLANE_HTTP_PROXY
      │      │ stdio
      │      ▼
      └─ Search Console MCP
@@ -27,11 +31,7 @@ VPS / Docker
             └─ IndexNow ────────→ Docker NAT → VPS IP
 ```
 
-这是**分流出口**：OpenAI Tunnel 控制面走 SOCKS5；MCP 自己调用搜索平台 API 时不走代理，所以 Bing 看到的仍是 VPS 公网出口 IP。
-
-## 1. 创建目录
-
-推荐与其它 MCP Docker 服务保持一致：
+## 1. Clone
 
 ```bash
 cd ~/FXIT-dockerdata
@@ -39,111 +39,72 @@ git clone https://github.com/fx-k/search-console-mcp-workers.git mcp-search-cons
 cd mcp-search-console
 ```
 
-## 2. 准备配置目录
+## 2. 准备 .env
 
 ```bash
 cp .env.example .env
-mkdir -p secrets
-chmod 700 secrets
+chmod 600 .env
 ```
 
-最终目录：
-
-```text
-mcp-search-console/
-├── Dockerfile
-├── docker-compose.yml
-├── .env
-└── secrets/
-    ├── google-service-account.json
-    ├── bing-api-key
-    └── openai-tunnel-api-key
-```
-
-`secrets/` 已被 Git 和 Docker build context 排除。
-
-## 3. Google Service Account
-
-把完整 JSON 保存为：
-
-```text
-secrets/google-service-account.json
-```
-
-建议：
-
-```bash
-chmod 600 secrets/google-service-account.json
-```
-
-## 4. Bing API Key
-
-安全输入，避免进入 shell history：
-
-```bash
-read -rsp "Bing API Key: " BING_API_KEY
-echo
-printf '%s' "$BING_API_KEY" > secrets/bing-api-key
-unset BING_API_KEY
-chmod 600 secrets/bing-api-key
-```
-
-容器内部只读取：
-
-```text
-/run/secrets/bing_api_key
-```
-
-## 5. OpenAI Tunnel
-
-在 OpenAI Platform 创建 / 选择 Tunnel，并取得：
-
-- Tunnel ID
-- Runtime API Key
-
-将 Runtime API Key 写入：
-
-```bash
-read -rsp "OpenAI Tunnel Runtime API Key: " OPENAI_TUNNEL_API_KEY
-echo
-printf '%s' "$OPENAI_TUNNEL_API_KEY" > secrets/openai-tunnel-api-key
-unset OPENAI_TUNNEL_API_KEY
-chmod 600 secrets/openai-tunnel-api-key
-```
-
-然后编辑 `.env`：
+需要配置：
 
 ```dotenv
-SOCKS5_UPSTREAM=socks5://user:password@proxy.example.com:1080
 CONTROL_PLANE_TUNNEL_ID=tunnel_xxx
-INDEXNOW_KEY=
+CONTROL_PLANE_API_KEY=sk-your-runtime-api-key
+
+GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+BING_API_KEY=your-bing-api-key
+INDEXNOW_KEY=your-public-indexnow-key
+
+SOCKS5_UPSTREAM=socks5://user:password@proxy.example.com:1080
+
 TUNNEL_CLIENT_VERSION=v0.0.14
-MCP_IMAGE_TAG=0.5.0-tunnel-0.0.14
+MCP_IMAGE_TAG=0.5.1-tunnel-0.0.14
 ```
 
-如果使用 IndexNow，把公开 key 填入 `INDEXNOW_KEY`。
+### Google JSON 为什么放 .env？
 
-## 6. Build
+这是有意与 `mcp-esa` 对齐的单一路径设计。
+
+Google Service Account JSON 先压成一行，再作为 `GOOGLE_SERVICE_ACCOUNT_JSON` 注入。这样：
+
+- Dockerfile 可以一直 `USER node`
+- 不需要 root entrypoint
+- 不需要 copy secret 到 tmpfs 再降权
+- 不需要处理 Compose 本地 secret bind mount 的 UID/GID 问题
+- 不需要同时维护 JSON 文件 / Base64 / 环境变量多套配置
+
+单机 root 管理 VPS 下，这与现有 `mcp-esa` 的信任边界一致。
+
+> 注意：具备 Docker/root 权限的人可以查看容器环境变量。因此 `.env` 本身必须 `chmod 600`，并且不要把 Docker 管理权限给不受信任用户。
+
+## 3. 从现有 Google JSON 生成单行值
+
+如果已经有 `google-service-account.json`，可以用一次性 Node 容器生成单行 JSON：
 
 ```bash
-docker compose build
+GOOGLE_JSON="$(docker run --rm \
+  -v "$PWD/google-service-account.json:/key.json:ro" \
+  node:22-bookworm-slim \
+  node -e 'const fs=require("fs");process.stdout.write(JSON.stringify(JSON.parse(fs.readFileSync("/key.json","utf8"))))'
+)"
+
+printf "GOOGLE_SERVICE_ACCOUNT_JSON='%s'\n" "$GOOGLE_JSON" >> .env
+unset GOOGLE_JSON
 ```
 
-镜像由两部分组成：
-
-```text
-ghcr.io/openai/tunnel-client:v0.0.14
-                +
-node:22-bookworm-slim
-                ↓
-fxit/mcp-search-console:0.5.0-tunnel-0.0.14
-```
-
-tunnel-client 使用官方 release image 中的二进制；MCP 使用 Node 22。
-
-## 7. 启动
+确认只检查字段名，不打印值：
 
 ```bash
+grep -q '^GOOGLE_SERVICE_ACCOUNT_JSON=' .env && echo "Google JSON configured"
+```
+
+## 4. Build & start
+
+```bash
+docker compose config --quiet
+docker compose pull egress-proxy
+docker compose build --pull mcp-search-console
 docker compose up -d
 ```
 
@@ -151,16 +112,10 @@ docker compose up -d
 
 ```bash
 docker compose ps
-docker compose logs --tail=100
+docker compose logs --tail=100 mcp-search-console
 ```
 
-容器应为：
-
-```text
-mcp-search-console
-```
-
-## 8. Health
+## 5. Health
 
 ```bash
 docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/healthz
@@ -173,97 +128,67 @@ echo
 进一步诊断：
 
 ```bash
-docker exec mcp-search-console curl -fsS 'http://127.0.0.1:8080/health?details=true'
-echo
-
 docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/health/mcp
 echo
 ```
 
-OpenAI 官方说明：`/readyz` ready 只代表启动 readiness；stdio MCP 的真实 discovery 是否被观察到，可看 `/health/mcp`。
+## 6. 验证分流出口
 
-## 9. 为什么没有端口映射？
-
-Compose 没有：
-
-```yaml
-ports:
-  - ...
-```
-
-这是故意的。
-
-Tunnel client 和 ChatGPT 的连接由容器主动向 OpenAI 建立，不需要把 MCP server 暴露到公网。
-
-health endpoint 只在容器内部 loopback：
-
-```text
-127.0.0.1:8080
-```
-
-Docker healthcheck 直接从容器内部检查。
-
-## 10. 分流代理为什么不会改变 Bing 出口？
-
-`egress-proxy` 只服务于 OpenAI Tunnel control-plane。
-
-Compose 对 tunnel-client 设置：
-
-```text
-CONTROL_PLANE_HTTP_PROXY=http://egress-proxy:18080
-```
-
-OpenAI 官方 tunnel-client 会将 control-plane 请求显式送入这个 HTTP proxy。stdio MCP binding 本身不使用 MCP HTTP proxy，而且本项目没有设置全局 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`。
-
-因此：
-
-```text
-Tunnel → gost → SOCKS5 → OpenAI
-MCP    → Docker NAT → VPS public IP → Bing/Google/PageSpeed
-```
-
-启动后先验证容器看到的直连出口：
-
-```bash
-docker exec mcp-search-console curl -4 -sS https://api.ipify.org
-echo
-```
-
-它应与宿主机：
+宿主机：
 
 ```bash
 curl -4 -sS https://api.ipify.org
 echo
 ```
 
-一致。
+MCP 容器：
 
-然后可以在容器内直接验证 Bing，读取 Docker secret 而不把 Key 打印出来：
+```bash
+docker exec mcp-search-console curl -4 -sS https://api.ipify.org
+echo
+```
+
+两者应一致，说明 MCP 业务请求走 VPS 自己的公网 IP。
+
+然后验证 Bing quota：
 
 ```bash
 docker exec mcp-search-console sh -lc '
-  KEY="$(cat /run/secrets/bing_api_key)"
   curl -4 -sS -G "https://ssl.bing.com/webmaster/api.svc/json/GetUrlSubmissionQuota" \
-    --data-urlencode "apikey=$KEY" \
+    --data-urlencode "apikey=$BING_API_KEY" \
     --data-urlencode "siteUrl=https://keke.su/"
 '
 ```
 
-如果这里正常，而 tunnel-client 日志也显示已连接 OpenAI，就说明两条出口都按预期分流。
+而 OpenAI Tunnel control-plane 只通过：
 
-## 11. 更新
+```text
+CONTROL_PLANE_HTTP_PROXY=http://egress-proxy:18080
+```
+
+走 SOCKS5。
+
+项目不会设置全局：
+
+```text
+HTTP_PROXY
+HTTPS_PROXY
+ALL_PROXY
+MCP_HTTP_PROXY
+```
+
+所以 stdio child 的 Bing / Google 请求不会跟着进入 SOCKS5。
+
+## 7. 更新
 
 ```bash
 cd ~/FXIT-dockerdata/mcp-search-console
 git pull --ff-only
 docker compose build --pull
 docker compose up -d
-docker image prune -f
 ```
 
-## 12. 停止 / 删除容器
-
-只停止：
+## 8. 停止
 
 ```bash
 docker compose stop
@@ -275,19 +200,14 @@ docker compose stop
 docker compose down
 ```
 
-不会删除：
-
-- `.env`
-- `secrets/`
-- Git 仓库
-
-如果要彻底退役，再手工删除这些文件。
+不会删除 `.env` 或 Git 仓库。
 
 ## 安全设置
 
-Compose 默认：
+默认：
 
 ```text
+USER node
 read_only: true
 cap_drop: ALL
 no-new-privileges
@@ -295,10 +215,10 @@ tmpfs /tmp
 pids_limit
 memory limit
 log rotation
-Docker secrets
+.env chmod 600
 ```
 
-OpenAI Tunnel Runtime API Key、Bing API Key、Google Service Account 都不放进 `.env`。
+这种设计刻意避免为了读取 root-owned Compose secret 而让主进程以 root 启动。
 
 ## OpenAI 官方资料
 

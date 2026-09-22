@@ -1,25 +1,19 @@
-import fs from 'node:fs';
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { handleMcp, err } from '../core/mcp.js';
 
-function readRequiredFile(path, name) {
-  if (!path) throw new Error('缺少 ' + name);
-  return fs.readFileSync(path, 'utf8').trim();
-}
-
-function readServiceAccount(path) {
-  const raw = readRequiredFile(path, 'GOOGLE_SERVICE_ACCOUNT_FILE');
+function validateServiceAccount(raw) {
+  if (!raw) throw new Error('缺少 GOOGLE_SERVICE_ACCOUNT_JSON');
   let account;
-  try { account = JSON.parse(raw); } catch { throw new Error('GOOGLE_SERVICE_ACCOUNT_FILE 不是有效 JSON'); }
+  try { account = JSON.parse(raw); } catch { throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON 不是有效 JSON'); }
   if (!account.client_email || !account.private_key) throw new Error('Google service account JSON 缺少 client_email/private_key');
   return raw;
 }
 
 export function createTunnelEnv(source = process.env) {
   return {
-    GOOGLE_SERVICE_ACCOUNT_JSON: readServiceAccount(source.GOOGLE_SERVICE_ACCOUNT_FILE),
-    BING_API_KEY: source.BING_API_KEY_FILE ? readRequiredFile(source.BING_API_KEY_FILE, 'BING_API_KEY_FILE') : (source.BING_API_KEY || ''),
+    GOOGLE_SERVICE_ACCOUNT_JSON: validateServiceAccount(source.GOOGLE_SERVICE_ACCOUNT_JSON),
+    BING_API_KEY: source.BING_API_KEY || '',
     INDEXNOW_KEY: source.INDEXNOW_KEY || ''
   };
 }
