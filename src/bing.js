@@ -91,3 +91,12 @@ export async function bingCrawlIssues(env, siteInput) {
 }
 
 export function bingConfigured(env) { return typeof env.BING_API_KEY === 'string' && env.BING_API_KEY.length > 0; }
+
+
+export async function bingKeywordStats(env, q, country, language) {
+  return bingRequest(env, 'GetKeywordStats', { q, country, language });
+}
+
+export async function bingRelatedKeywords(env, q, country, language) {
+  return bingRequest(env, 'GetRelatedKeywords', { q, country, language });
+}
