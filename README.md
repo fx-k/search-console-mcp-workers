@@ -94,6 +94,12 @@ https://<worker>.workers.dev/mcp
 
 `GET /health` only reports configuration presence and process health. It never prints secret values and does not prove the external credentials are valid; verify with `sites_list` after deployment.
 
+## Plugin behavior notes
+
+- Bing calls that already have an explicit site URL no longer call `GetUserSites` as a preflight. The Bing API itself remains authoritative for access, which avoids redundant requests and reduces IP-throttle pressure.
+- `indexing_status(method="indexnow")` verifies the root key file directly from `siteUrl`.
+- Google Indexing metadata HTTP 404 is normalized to `notified: false`: it means no prior Indexing API notification metadata exists for that URL, not that Search Console says the URL is unindexed.
+
 ## ChatGPT connection
 
 Create a custom Remote MCP / Plugin connection using the Worker `/mcp` URL and OAuth. The Worker publishes OAuth discovery, dynamic client registration, PKCE S256, token refresh, and protected-resource metadata. The authorization page is protected by `OAUTH_PASSWORD`.
