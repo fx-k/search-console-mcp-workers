@@ -1,0 +1,16 @@
+name = "search-console-mcp"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# Browser-based ChatGPT OAuth/MCP requests. Keep this exact; do not use *.
+CORS_ALLOWED_ORIGINS = "https://chatgpt.com"
+
+[[durable_objects.bindings]]
+name = "OAUTH_STATE"
+class_name = "OAuthState"
+
+[[migrations]]
+tag = "v1-oauth-sqlite"
+new_sqlite_classes = ["OAuthState"]
