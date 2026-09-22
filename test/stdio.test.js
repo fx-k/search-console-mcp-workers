@@ -13,9 +13,11 @@ test('Tunnel runtime loads Google credentials from one file path', () => {
     private_key: 'dummy'
   }));
   try {
+    const bingFile = path.join(dir, 'bing-key');
+    fs.writeFileSync(bingFile, 'bing-key\n');
     const env = createTunnelEnv({
       GOOGLE_SERVICE_ACCOUNT_FILE: file,
-      BING_API_KEY: 'bing-key',
+      BING_API_KEY_FILE: bingFile,
       INDEXNOW_KEY: 'abcDEF12-3456'
     });
     assert.equal(JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON).client_email, 'mcp@example.iam.gserviceaccount.com');
