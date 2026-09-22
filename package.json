@@ -1,9 +1,9 @@
 {
   "name": "search-console-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "Google Search Console + Bing Webmaster + PageSpeed MCP with Cloudflare Workers and OpenAI Tunnel runtimes",
+  "description": "Google Search Console + Bing Webmaster + PageSpeed MCP for Cloudflare Workers or Docker + OpenAI Tunnel",
   "scripts": {
     "check": "node --check src/core/bing.js && node --check src/core/crypto.js && node --check src/core/google.js && node --check src/core/indexing.js && node --check src/core/intelligence.js && node --check src/core/mcp.js && node --check src/core/pagespeed.js && node --check src/core/technical.js && node --check src/core/tools.js && node --check src/core/validation.js && node --check src/runtime/worker/index.js && node --check src/runtime/worker/oauth.js && node --check src/runtime/worker/oauth-state.js && node --check src/runtime/stdio.js",
     "test": "node --test test/*.test.js",
