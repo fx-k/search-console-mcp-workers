@@ -3,9 +3,13 @@ import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { handleMcp, err } from '../core/mcp.js';
 
+function readRequiredFile(path, name) {
+  if (!path) throw new Error('缺少 ' + name);
+  return fs.readFileSync(path, 'utf8').trim();
+}
+
 function readServiceAccount(path) {
-  if (!path) throw new Error('缺少 GOOGLE_SERVICE_ACCOUNT_FILE');
-  const raw = fs.readFileSync(path, 'utf8');
+  const raw = readRequiredFile(path, 'GOOGLE_SERVICE_ACCOUNT_FILE');
   let account;
   try { account = JSON.parse(raw); } catch { throw new Error('GOOGLE_SERVICE_ACCOUNT_FILE 不是有效 JSON'); }
   if (!account.client_email || !account.private_key) throw new Error('Google service account JSON 缺少 client_email/private_key');
@@ -15,7 +19,7 @@ function readServiceAccount(path) {
 export function createTunnelEnv(source = process.env) {
   return {
     GOOGLE_SERVICE_ACCOUNT_JSON: readServiceAccount(source.GOOGLE_SERVICE_ACCOUNT_FILE),
-    BING_API_KEY: source.BING_API_KEY || '',
+    BING_API_KEY: source.BING_API_KEY_FILE ? readRequiredFile(source.BING_API_KEY_FILE, 'BING_API_KEY_FILE') : (source.BING_API_KEY || ''),
     INDEXNOW_KEY: source.INDEXNOW_KEY || ''
   };
 }
