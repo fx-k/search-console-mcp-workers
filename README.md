@@ -17,7 +17,7 @@ Cloudflare Workers 部署最省事，但 Bing Webmaster API 对共享出口 IP �
 ERROR!!! ThrottleIP
 ```
 
-如果你希望 Bing 请求稳定地从自己的服务器公网 IP 发出，可以使用 Docker + OpenAI Tunnel：
+如果你的 VPS 所在网络访问 OpenAI Tunnel 需要代理、但又希望 Bing 仍然使用 VPS 自己的公网 IP，本项目支持**分流出口**：OpenAI Tunnel 控制面走 SOCKS5，Google / Bing / PageSpeed / IndexNow 直连 VPS 出口。
 
 ```text
                          Search Console MCP
@@ -39,7 +39,7 @@ ERROR!!! ThrottleIP
 | 方案 | 优点 | 注意 |
 | --- | --- | --- |
 | Cloudflare Workers | 无服务器、部署最快、内置 OAuth | Bing 可能遇到共享出口 `ThrottleIP` |
-| Docker + OpenAI Tunnel | 使用自己的 VPS 出口 IP，不开放 MCP 公网入站端口 | 需要 Docker 和 OpenAI Tunnel |
+| Docker + OpenAI Tunnel | Bing 等 API 使用 VPS 出口；OpenAI Tunnel 控制面可单独走 SOCKS5；不开放 MCP 公网入站端口 | 需要 Docker、OpenAI Tunnel 和可用的 SOCKS5（当 OpenAI 出口需要代理时） |
 
 如果主要使用 Google，Workers 很方便；如果 Bing 也是核心能力，推荐 **Docker + OpenAI Tunnel**。
 
@@ -181,6 +181,9 @@ secrets/
 然后编辑 `.env`：
 
 ```dotenv
+# 只给 OpenAI Tunnel control-plane 使用
+SOCKS5_UPSTREAM=socks5://user:password@proxy.example.com:1080
+
 CONTROL_PLANE_TUNNEL_ID=tunnel_xxx
 INDEXNOW_KEY=your-public-indexnow-key
 TUNNEL_CLIENT_VERSION=v0.0.14
@@ -211,25 +214,48 @@ docker exec mcp-search-console curl -fsS http://127.0.0.1:8080/readyz
 mcp-search-console
 ```
 
-### 网络行为
+### 分流出口：Tunnel 走 SOCKS5，搜索 API 走 VPS IP
 
-这个 Compose **没有 egress proxy**：
+Compose 会启动两个容器：
 
 ```text
+mcp-search-console-egress
+└─ gost：HTTP CONNECT → SOCKS5_UPSTREAM
+
 mcp-search-console
-      │
-      ▼
-Docker NAT
-      │
-      ▼
-VPS 公网出口
-      │
-      └──→ Bing / Google / PageSpeed
+├─ tunnel-client
+└─ Search Console MCP (stdio)
 ```
 
-也就是说 Bing 看到的是 VPS 的出口公网 IP。
+只有 tunnel-client 的 **OpenAI control-plane** 被显式设置：
 
-不要为了复用其他 MCP 的代理链路，把它接到 SOCKS5 / HTTP egress proxy；否则会改变 Bing 实际看到的出口 IP。
+```text
+CONTROL_PLANE_HTTP_PROXY=http://egress-proxy:18080
+```
+
+没有设置全局 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`。
+
+因此真实流量是：
+
+```text
+OpenAI Tunnel control-plane
+mcp-search-console
+      ↓
+egress-proxy
+      ↓
+SOCKS5_UPSTREAM
+      ↓
+api.openai.com
+
+Bing / Google / PageSpeed / IndexNow
+mcp-search-console
+      ↓
+Docker NAT
+      ↓
+VPS 公网出口
+```
+
+也就是说，即使 OpenAI Tunnel 需要 SOCKS5，Bing 仍然看到 VPS 自己的公网 IP。
 
 完整说明：[Docker + OpenAI Tunnel 部署](docs/openai-tunnel.md)
 
