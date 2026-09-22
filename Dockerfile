@@ -9,7 +9,7 @@ LABEL org.opencontainers.image.source="https://github.com/fx-k/search-console-mc
 LABEL org.opencontainers.image.description="mcp-search-console: Search Console MCP + OpenAI tunnel-client"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tini \
+    && apt-get install -y --no-install-recommends ca-certificates curl tini gosu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=tunnel-client /usr/bin/tunnel-client /usr/bin/tunnel-client
@@ -17,19 +17,17 @@ COPY --from=tunnel-client /usr/bin/tunnel-client /usr/bin/tunnel-client
 WORKDIR /app
 COPY package.json ./
 COPY src ./src
+COPY docker-entrypoint.sh /usr/local/bin/mcp-search-console-entrypoint
 
-RUN chown -R node:node /app
+RUN chmod 0755 /usr/local/bin/mcp-search-console-entrypoint \
+    && chown -R node:node /app
 
 ENV NODE_ENV=production \
     HOME=/tmp \
     MCP_COMMAND="node /app/src/runtime/stdio.js" \
-    GOOGLE_SERVICE_ACCOUNT_FILE=/run/secrets/google_service_account \
-    BING_API_KEY_FILE=/run/secrets/bing_api_key \
     HEALTH_LISTEN_ADDR=127.0.0.1:8080 \
     LOG_LEVEL=info \
     LOG_FORMAT=json
 
-USER node
-
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/bin/tunnel-client", "run"]
-CMD ["--control-plane.api-key=file:/run/secrets/openai_tunnel_api_key"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/mcp-search-console-entrypoint"]
+CMD []
