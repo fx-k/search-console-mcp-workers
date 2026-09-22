@@ -6,7 +6,7 @@ import { analyticsCompare, analyticsAnomalies, seoAudit, genaiQueryInsights, key
 import { schemaInspect, siteHealthCheck } from './technical.js';
 import { indexingSubmit, indexingStatus } from './indexing.js';
 
-export const VERSION = '0.3.0';
+export const VERSION = '0.3.2';
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 const writeAction = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
@@ -74,12 +74,12 @@ export const TOOLS = [
     annotations: writeAction
   },
   {
-    name: 'indexing_status', title: 'Indexing submission status', description: 'Reads Google Indexing notification metadata, Bing URL submission quota, or IndexNow key verification status.',
+    name: 'indexing_status', title: 'Indexing submission status', description: 'Reads Google Indexing notification metadata, Bing URL submission quota, or verifies the IndexNow root key file. siteUrl is required; Google status also requires urls.',
     inputSchema: obj({
       method: { type: 'string', enum: ['google','bing','indexnow'] },
       siteUrl,
       urls: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 2048 }, minItems: 1, maxItems: 20, uniqueItems: true }
-    }, ['method']),
+    }, ['method','siteUrl']),
     annotations: readOnly
   }
 ];
