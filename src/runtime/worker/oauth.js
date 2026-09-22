@@ -1,6 +1,6 @@
 /** Remote MCP OAuth gate. Adapted from fx-k/dnspod-mcp-workers (MIT). */
 import { state } from './oauth-state.js';
-import { b64url, unb64url, hmac, sha256, hex, randomToken } from './crypto.js';
+import { b64url, unb64url, hmac, sha256, hex, randomToken } from '../../core/crypto.js';
 
 const enc = new TextEncoder();
 const ACCESS_TTL = 3600;
@@ -71,7 +71,7 @@ function metadata(origin) {
 }
 
 function page(url, client, csrf, error = '') {
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>授权 Search Console MCP</title><style>body{font:16px system-ui;max-width:600px;margin:10vh auto;padding:24px;line-height:1.7}input,button{font:inherit;padding:10px}code{overflow-wrap:anywhere}.error{color:#b00020}</style><h1>授权 Search Console MCP</h1><p>客户端：${escapeHtml(client.client_name)}<br>返回地址：<code>${escapeHtml(url.searchParams.get('redirect_uri'))}</code></p><p>授权后客户端可调用此 Worker 的只读 Google Search Console、Bing Webmaster 和 PageSpeed 工具。外部平台权限仍由各自凭据限制。</p><p class="error">${escapeHtml(error)}</p><form method="POST" action="${escapeHtml(url.pathname + url.search)}"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><label>访问密码 <input type="password" name="password" required autocomplete="current-password"></label><button>确认授权</button></form></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>授权 Search Console MCP</title><style>body{font:16px system-ui;max-width:600px;margin:10vh auto;padding:24px;line-height:1.7}input,button{font:inherit;padding:10px}code{overflow-wrap:anywhere}.error{color:#b00020}</style><h1>授权 Search Console MCP</h1><p>客户端：${escapeHtml(client.client_name)}<br>返回地址：<code>${escapeHtml(url.searchParams.get('redirect_uri'))}</code></p><p>授权后客户端可调用此 Search Console MCP 的 Google、Bing、PageSpeed 与 SEO 工具。外部平台权限仍由各自凭据限制。</p><p class="error">${escapeHtml(error)}</p><form method="POST" action="${escapeHtml(url.pathname + url.search)}"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><label>访问密码 <input type="password" name="password" required autocomplete="current-password"></label><button>确认授权</button></form></html>`;
 }
 
 function callbackPage(target) {

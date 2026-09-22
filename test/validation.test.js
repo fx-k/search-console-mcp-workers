@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeBingDate } from '../src/bing.js';
-import { validateDateRange } from '../src/validation.js';
+import { normalizeBingDate } from '../src/core/bing.js';
+import { validateDateRange } from '../src/core/validation.js';
 
 test('normalizes Bing Microsoft JSON dates', () => {
   assert.equal(normalizeBingDate('/Date(1789948800000)/'), '2026-09-21');

@@ -1,0 +1,19 @@
+[Unit]
+Description=Search Console MCP via OpenAI Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=search-console-mcp
+Group=search-console-mcp
+WorkingDirectory=/opt/search-console-mcp
+EnvironmentFile=/etc/search-console-mcp/search-console-mcp.env
+ExecStart=/usr/local/bin/tunnel-client run --control-plane.api-key=file:/etc/search-console-mcp/openai-tunnel-api-key --log.level=info --log.format=json
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

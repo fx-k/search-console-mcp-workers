@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveBingSite } from '../src/bing.js';
+import { resolveBingSite } from '../src/core/bing.js';
 
 test('resolveBingSite normalizes a verified-site URL without GetUserSites preflight', async () => {
   const originalFetch = globalThis.fetch;
