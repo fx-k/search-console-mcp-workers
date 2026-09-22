@@ -4,9 +4,11 @@ import { bingSites, bingSitemaps, bingAnalytics, bingInspect, bingCrawlIssues, b
 import { pagespeedAnalyze, pagespeedConfigured } from './pagespeed.js';
 import { analyticsCompare, analyticsAnomalies, seoAudit, genaiQueryInsights, keywordResearch } from './intelligence.js';
 import { schemaInspect, siteHealthCheck } from './technical.js';
+import { indexingSubmit, indexingStatus } from './indexing.js';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+const writeAction = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const engine = { type: 'string', enum: ['google', 'bing', 'all'] };
 const siteUrl = { type: 'string', minLength: 1, maxLength: 2048 };
@@ -60,6 +62,25 @@ export const TOOLS = [
   {
     name: 'site_health_check', title: 'Technical SEO health check', description: 'Read-only combined check of homepage metadata, robots.txt, sitemap.xml, Google/Bing sitemap status, Bing crawl issues and optional PageSpeed.',
     inputSchema: obj({ siteUrl, pageUrl: siteUrl, includePageSpeed: { type: 'boolean' }, strategy: { type: 'string', enum: ['mobile','desktop'] } }, ['siteUrl']), annotations: readOnly
+  },
+  {
+    name: 'indexing_submit', title: 'Submit URLs to indexing services', description: 'Writes URL notifications to Google Indexing API, Bing URL Submission, or IndexNow. Google officially restricts its Indexing API to JobPosting and BroadcastEvent-in-VideoObject pages; ordinary blog pages may be rejected or ignored.',
+    inputSchema: obj({
+      method: { type: 'string', enum: ['google','bing','indexnow'] },
+      siteUrl,
+      urls: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 2048 }, minItems: 1, maxItems: 1000, uniqueItems: true },
+      action: { type: 'string', enum: ['updated','deleted'] }
+    }, ['method','urls']),
+    annotations: writeAction
+  },
+  {
+    name: 'indexing_status', title: 'Indexing submission status', description: 'Reads Google Indexing notification metadata, Bing URL submission quota, or IndexNow key verification status.',
+    inputSchema: obj({
+      method: { type: 'string', enum: ['google','bing','indexnow'] },
+      siteUrl,
+      urls: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 2048 }, minItems: 1, maxItems: 20, uniqueItems: true }
+    }, ['method']),
+    annotations: readOnly
   }
 ];
 
@@ -87,7 +108,12 @@ export async function callTool(env, name, args = {}) {
     google: { configured: googleConfigured(env), auth: 'service_account', scope: 'webmasters.readonly' },
     bing: { configured: bingConfigured(env), auth: 'api_key' },
     pagespeed: { configuredApiKey: pagespeedConfigured(env), note: 'API key is optional but recommended for quota stability' },
-    writeToolsExposed: false
+    indexing: {
+      googleIndexing: { configured: !!(env.GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON || env.GOOGLE_SERVICE_ACCOUNT_JSON), enabled: true },
+      bingUrlSubmission: { configured: bingConfigured(env), enabled: true },
+      indexNow: { configured: typeof env.INDEXNOW_KEY === 'string' && env.INDEXNOW_KEY.length >= 8, enabled: true, keyLocation: env.INDEXNOW_KEY_LOCATION || null }
+    },
+    writeToolsExposed: true
   };
 
   if (name === 'sites_list') {
@@ -128,6 +154,8 @@ export async function callTool(env, name, args = {}) {
   if (name === 'genai_query_insights') return genaiQueryInsights(env, args);
   if (name === 'schema_inspect') return schemaInspect(args.url);
   if (name === 'site_health_check') return siteHealthCheck(env, args);
+  if (name === 'indexing_submit') return indexingSubmit(env, args);
+  if (name === 'indexing_status') return indexingStatus(env, args);
 
   if (name === 'compare_engines') {
     const dimensions = [args.dimension || 'query'];
