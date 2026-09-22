@@ -17,3 +17,5 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run worker:build
+      - run: docker compose config
+      - run: docker build --build-arg TUNNEL_CLIENT_VERSION=v0.0.14 -t mcp-search-console:test .
