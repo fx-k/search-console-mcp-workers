@@ -48,12 +48,11 @@ npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON
 npx wrangler secret put BING_API_KEY
 npx wrangler secret put OAUTH_PASSWORD
 npx wrangler secret put OAUTH_JWT_SECRET
-npx wrangler secret put INDEXNOW_KEY
 ```
 
 PageSpeed reuses `GOOGLE_SERVICE_ACCOUNT_JSON` through OAuth 2.0. There is no separate PageSpeed API key path.
 
-IndexNow always uses the root key location `https://<submitted-host>/<INDEXNOW_KEY>.txt`. That file must be publicly reachable and contain only the IndexNow key.
+IndexNow key is public protocol metadata, so it is stored as a normal Worker `[vars]` value rather than a Secret. This deployment uses `INDEXNOW_KEY = "30f6260ce94cd8c82861cdfea9437ba9"` and the root key location `https://<submitted-host>/<INDEXNOW_KEY>.txt`.
 
 ### `GOOGLE_SERVICE_ACCOUNT_JSON`
 
