@@ -3,7 +3,7 @@ import { oauth, verifyAccess, json, escapeHtml } from './oauth.js';
 import { handleMcp, protocols, err } from './mcp.js';
 import { googleConfigured } from './google.js';
 import { bingConfigured } from './bing.js';
-import { pagespeedConfigured, pagespeedAuthMode } from './pagespeed.js';
+import { pagespeedConfigured } from './pagespeed.js';
 export { OAuthState } from './oauth-state.js';
 
 async function bounded(request) {
@@ -48,7 +48,7 @@ export default {
     if (path === '/health') return json({
       ok: true, version: VERSION, toolCount: TOOLS.length,
       oauthConfigured: !!env.OAUTH_STATE && !!env.OAUTH_PASSWORD && !!env.OAUTH_JWT_SECRET,
-      integrations: { google: googleConfigured(env), bing: bingConfigured(env), pagespeed: { configured: pagespeedConfigured(env), auth: pagespeedAuthMode(env) }, googleIndexing: !!(env.GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON || env.GOOGLE_SERVICE_ACCOUNT_JSON), indexNow: !!env.INDEXNOW_KEY },
+      integrations: { google: googleConfigured(env), bing: bingConfigured(env), pagespeed: pagespeedConfigured(env), googleIndexing: googleConfigured(env), indexNow: !!env.INDEXNOW_KEY },
       writeToolsExposed: true
     }, 200, cors);
 
