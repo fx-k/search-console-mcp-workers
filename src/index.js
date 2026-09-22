@@ -48,11 +48,11 @@ export default {
     if (path === '/health') return json({
       ok: true, version: VERSION, toolCount: TOOLS.length,
       oauthConfigured: !!env.OAUTH_STATE && !!env.OAUTH_PASSWORD && !!env.OAUTH_JWT_SECRET,
-      integrations: { google: googleConfigured(env), bing: bingConfigured(env), pagespeedApiKey: pagespeedConfigured(env) },
-      writeToolsExposed: false
+      integrations: { google: googleConfigured(env), bing: bingConfigured(env), pagespeedApiKey: pagespeedConfigured(env), googleIndexing: !!(env.GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON || env.GOOGLE_SERVICE_ACCOUNT_JSON), indexNow: !!env.INDEXNOW_KEY },
+      writeToolsExposed: true
     }, 200, cors);
 
-    if (path === '/') return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Search Console MCP</title><h1>Search Console MCP v${VERSION}</h1><p>只读 Google Search Console + Bing Webmaster Tools + PageSpeed Remote MCP。</p><p>ChatGPT Remote MCP URL:</p><pre>${escapeHtml(url.origin)}/mcp</pre><ul>${TOOLS.map(t => `<li><code>${t.name}</code> — ${escapeHtml(t.title)}</li>`).join('')}</ul></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff' } });
+    if (path === '/') return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Search Console MCP</title><h1>Search Console MCP v${VERSION}</h1><p>Google Search Console + Bing Webmaster Tools + PageSpeed + URL Submission Remote MCP。</p><p>ChatGPT Remote MCP URL:</p><pre>${escapeHtml(url.origin)}/mcp</pre><ul>${TOOLS.map(t => `<li><code>${t.name}</code> — ${escapeHtml(t.title)}</li>`).join('')}</ul></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Content-Type-Options': 'nosniff' } });
 
     if (['/sse', '/message'].includes(path)) return json({ error: 'legacy_transport_removed', message: '请使用 /mcp Streamable HTTP' }, 410, cors);
     if (path !== '/mcp') return json({ error: 'not_found' }, 404, cors);
