@@ -54,9 +54,6 @@ services:
 
     environment:
       MCP_COMMAND: "node /app/src/runtime/stdio.js"
-      GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google_service_account
-      BING_API_KEY_FILE: /run/secrets/bing_api_key
-
       # IMPORTANT:
       # 只代理 tunnel-client -> OpenAI control plane。
       # 不设置 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY，
@@ -66,9 +63,6 @@ services:
       HEALTH_LISTEN_ADDR: 127.0.0.1:8080
       LOG_LEVEL: info
       LOG_FORMAT: json
-
-    command:
-      - "--control-plane.api-key=file:/run/secrets/openai_tunnel_api_key"
 
     secrets:
       - google_service_account
