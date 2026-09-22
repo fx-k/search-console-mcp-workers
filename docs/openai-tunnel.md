@@ -13,19 +13,21 @@ OpenAI Tunnel Service
    │ outbound HTTPS
    │
 VPS / Docker
+├─ mcp-search-console-egress
+│    └─ gost → SOCKS5_UPSTREAM → OpenAI
+│
 └─ mcp-search-console
-      ├─ tunnel-client
-      │      │ stdio
-      │      ▼
-      └─ Search Console MCP
-             │
-             ├─ Google
-             ├─ Bing
-             ├─ PageSpeed
-             └─ IndexNow
+     ├─ tunnel-client ──────────→ egress-proxy → OpenAI control-plane
+     │      │ stdio
+     │      ▼
+     └─ Search Console MCP
+            ├─ Google ──────────→ Docker NAT → VPS IP
+            ├─ Bing ────────────→ Docker NAT → VPS IP
+            ├─ PageSpeed ───────→ Docker NAT → VPS IP
+            └─ IndexNow ────────→ Docker NAT → VPS IP
 ```
 
-MCP 对 Bing 的请求由容器直接通过 Docker NAT 发出，因此 Bing 看到的是 VPS 公网出口 IP。
+这是**分流出口**：OpenAI Tunnel 控制面走 SOCKS5；MCP 自己调用搜索平台 API 时不走代理，所以 Bing 看到的仍是 VPS 公网出口 IP。
 
 ## 1. 创建目录
 
@@ -112,6 +114,7 @@ chmod 600 secrets/openai-tunnel-api-key
 然后编辑 `.env`：
 
 ```dotenv
+SOCKS5_UPSTREAM=socks5://user:password@proxy.example.com:1080
 CONTROL_PLANE_TUNNEL_ID=tunnel_xxx
 INDEXNOW_KEY=
 TUNNEL_CLIENT_VERSION=v0.0.14
@@ -200,24 +203,53 @@ health endpoint 只在容器内部 loopback：
 
 Docker healthcheck 直接从容器内部检查。
 
-## 10. 为什么没有 egress-proxy？
+## 10. 分流代理为什么不会改变 Bing 出口？
 
-如果迁移到 VPS 是为了避免 Cloudflare Workers 的 Bing `ThrottleIP`，那么应该让：
+`egress-proxy` 只服务于 OpenAI Tunnel control-plane。
+
+Compose 对 tunnel-client 设置：
 
 ```text
-container → Docker NAT → VPS public IP → Bing
+CONTROL_PLANE_HTTP_PROXY=http://egress-proxy:18080
 ```
 
-不要接额外 SOCKS5 / HTTP proxy，否则 Bing 看到的就不是 VPS 本身的公网出口 IP。
+OpenAI 官方 tunnel-client 会将 control-plane 请求显式送入这个 HTTP proxy。stdio MCP binding 本身不使用 MCP HTTP proxy，而且本项目没有设置全局 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`。
 
-可以从宿主机先验证：
+因此：
+
+```text
+Tunnel → gost → SOCKS5 → OpenAI
+MCP    → Docker NAT → VPS public IP → Bing/Google/PageSpeed
+```
+
+启动后先验证容器看到的直连出口：
+
+```bash
+docker exec mcp-search-console curl -4 -sS https://api.ipify.org
+echo
+```
+
+它应与宿主机：
 
 ```bash
 curl -4 -sS https://api.ipify.org
 echo
 ```
 
-再确认 Bing API 从这个 IP 能成功返回。
+一致。
+
+然后可以在容器内直接验证 Bing，读取 Docker secret 而不把 Key 打印出来：
+
+```bash
+docker exec mcp-search-console sh -lc '
+  KEY="$(cat /run/secrets/bing_api_key)"
+  curl -4 -sS -G "https://ssl.bing.com/webmaster/api.svc/json/GetUrlSubmissionQuota" \
+    --data-urlencode "apikey=$KEY" \
+    --data-urlencode "siteUrl=https://keke.su/"
+'
+```
+
+如果这里正常，而 tunnel-client 日志也显示已连接 OpenAI，就说明两条出口都按预期分流。
 
 ## 11. 更新
 
