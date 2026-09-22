@@ -77,10 +77,21 @@ export async function googleIndexingSubmit(env, urls, action = 'updated') {
       body: JSON.stringify({ url, type })
     });
     const data = await response.json().catch(() => ({}));
+    if (response.status === 404) {
+      results.push({
+        url,
+        ok: true,
+        status: 404,
+        notified: false,
+        note: 'No prior Google Indexing API notification metadata exists for this URL.'
+      });
+      continue;
+    }
     results.push({
       url,
       ok: response.ok,
       status: response.status,
+      notified: response.ok,
       result: response.ok ? data : undefined,
       error: response.ok ? undefined : (data?.error?.message || response.statusText)
     });
@@ -151,15 +162,31 @@ export async function indexNowSubmit(env, urls) {
   };
 }
 
-export async function indexNowStatus(env, urls = []) {
+function siteRootUrl(siteInput) {
+  const raw = String(siteInput || '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('sc-domain:')) {
+    const host = raw.slice('sc-domain:'.length).toLowerCase();
+    return host ? 'https://' + host + '/' : null;
+  }
+  const url = new URL(raw);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('siteUrl 必须使用 http/https');
+  return url.protocol + '//' + url.host + '/';
+}
+
+export async function indexNowStatus(env, siteInput, urls = []) {
   const configured = typeof env.INDEXNOW_KEY === 'string' && env.INDEXNOW_KEY.length >= 8;
   if (!configured) return { configured: false };
-  if (!urls.length) return { configured: true };
-  const config = indexNowConfig(env, urls);
+
+  const candidates = urls.length ? urls : [siteRootUrl(siteInput)].filter(Boolean);
+  if (!candidates.length) throw new Error('IndexNow key verification 需要 siteUrl 或 urls');
+
+  const config = indexNowConfig(env, candidates);
   const response = await fetch(config.keyLocation, { redirect: 'follow' });
   const text = (await response.text().catch(() => '')).trim();
   return {
     configured: true,
+    host: config.host,
     keyLocation: config.keyLocation,
     verificationFetchStatus: response.status,
     verificationMatches: response.ok && text === config.key
@@ -176,6 +203,6 @@ export async function indexingSubmit(env, args) {
 export async function indexingStatus(env, args) {
   if (args.method === 'google') return googleIndexingStatus(env, args.urls || []);
   if (args.method === 'bing') return bingSubmissionQuota(env, args.siteUrl);
-  if (args.method === 'indexnow') return indexNowStatus(env, args.urls || []);
+  if (args.method === 'indexnow') return indexNowStatus(env, args.siteUrl, args.urls || []);
   throw new Error('Unsupported indexing status method: ' + args.method);
 }
