@@ -91,3 +91,38 @@ export async function bingCrawlIssues(env, siteInput) {
 }
 
 export function bingConfigured(env) { return typeof env.BING_API_KEY === 'string' && env.BING_API_KEY.length > 0; }
+
+
+export async function bingKeywordStats(env, q, country, language) {
+  return bingRequest(env, 'GetKeywordStats', { q, country, language });
+}
+
+export async function bingRelatedKeywords(env, q, country, language) {
+  return bingRequest(env, 'GetRelatedKeywords', { q, country, language });
+}
+
+
+export async function bingSubmissionQuota(env, siteInput) {
+  const siteUrl = await resolveBingSite(env, siteInput);
+  const quota = await bingRequest(env, 'GetUrlSubmissionQuota', { siteUrl });
+  return { siteUrl, quota };
+}
+
+export async function bingSubmitUrls(env, siteInput, urls) {
+  const siteUrl = await resolveBingSite(env, siteInput);
+  const quota = await bingRequest(env, 'GetUrlSubmissionQuota', { siteUrl });
+  if (!Array.isArray(urls) || !urls.length) throw new Error('urls 不能为空');
+  if (urls.length > 500) throw new Error('Bing SubmitUrlBatch 单次最多 500 个 URL');
+  const siteHost = new URL(siteUrl).hostname.toLowerCase();
+  for (const value of urls) {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Bing 提交 URL 必须使用 http/https');
+    if (url.hostname.toLowerCase() !== siteHost) throw new Error('Bing 提交 URL 必须属于已验证站点 ' + siteHost);
+  }
+  if (urls.length === 1) {
+    await bingRequest(env, 'SubmitUrl', { siteUrl, url: urls[0] }, true);
+  } else {
+    await bingRequest(env, 'SubmitUrlBatch', { siteUrl, urlList: urls }, true);
+  }
+  return { ok: true, siteUrl, submitted: urls.length, urls, quotaBefore: quota };
+}
