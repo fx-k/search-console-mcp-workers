@@ -1,6 +1,6 @@
 {
   "name": "search-console-mcp-workers",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Read-only Google Search Console and Bing Webmaster Tools Remote MCP on Cloudflare Workers",
