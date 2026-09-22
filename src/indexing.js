@@ -6,8 +6,8 @@ const GOOGLE_INDEXING_SCOPE = 'https://www.googleapis.com/auth/indexing';
 let googleIndexingToken = null;
 
 function googleIndexingAccount(env) {
-  const raw = env.GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON || env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error('Google Indexing API 未配置 service account JSON');
+  const raw = env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error('Google Indexing API 未配置 GOOGLE_SERVICE_ACCOUNT_JSON');
   let account;
   try { account = JSON.parse(raw); } catch { throw new Error('Google Indexing service account JSON 不是有效 JSON'); }
   if (!account.client_email || !account.private_key) throw new Error('Google Indexing service account JSON 缺少 client_email/private_key');
@@ -122,12 +122,8 @@ function indexNowConfig(env, urls) {
   if (normalized.length > 1000) throw new Error('本 Worker 单次最多提交 1000 个 IndexNow URL');
   const host = new URL(normalized[0]).hostname.toLowerCase();
   validateUrls(normalized, host);
-  const keyLocation = env.INDEXNOW_KEY_LOCATION || ('https://' + host + '/' + env.INDEXNOW_KEY + '.txt');
-  const location = new URL(keyLocation);
-  if (location.hostname.toLowerCase() !== host) {
-    throw new Error('INDEXNOW_KEY_LOCATION 必须位于与提交 URL 相同的 host');
-  }
-  return { key: env.INDEXNOW_KEY, keyLocation: location.href, host, urls: normalized };
+  const keyLocation = 'https://' + host + '/' + env.INDEXNOW_KEY + '.txt';
+  return { key: env.INDEXNOW_KEY, keyLocation, host, urls: normalized };
 }
 
 export async function indexNowSubmit(env, urls) {
@@ -158,7 +154,7 @@ export async function indexNowSubmit(env, urls) {
 export async function indexNowStatus(env, urls = []) {
   const configured = typeof env.INDEXNOW_KEY === 'string' && env.INDEXNOW_KEY.length >= 8;
   if (!configured) return { configured: false };
-  if (!urls.length) return { configured: true, keyLocation: env.INDEXNOW_KEY_LOCATION || null };
+  if (!urls.length) return { configured: true };
   const config = indexNowConfig(env, urls);
   const response = await fetch(config.keyLocation, { redirect: 'follow' });
   const text = (await response.text().catch(() => '')).trim();

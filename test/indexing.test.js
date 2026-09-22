@@ -39,6 +39,6 @@ test('IndexNow rejects mixed hosts', async () => {
 test('Google Indexing reports missing service-account configuration before network calls', async () => {
   await assert.rejects(
     () => googleIndexingSubmit({}, ['https://example.com/a'], 'updated'),
-    /未配置 service account/
+    /未配置 GOOGLE_SERVICE_ACCOUNT_JSON/
   );
 });

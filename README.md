@@ -51,23 +51,9 @@ npx wrangler secret put OAUTH_JWT_SECRET
 npx wrangler secret put INDEXNOW_KEY
 ```
 
-PageSpeed reuses `GOOGLE_SERVICE_ACCOUNT_JSON` through OAuth 2.0 by default, so no separate PageSpeed API key is required.
+PageSpeed reuses `GOOGLE_SERVICE_ACCOUNT_JSON` through OAuth 2.0. There is no separate PageSpeed API key path.
 
-For compatibility, `PAGESPEED_API_KEY` is still supported as a fallback when no Google service-account JSON is present.
-
-Optional separate Google service-account JSON for Indexing API (if omitted, the Worker falls back to `GOOGLE_SERVICE_ACCOUNT_JSON`):
-
-```bash
-npx wrangler secret put GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON
-```
-
-Optional non-default IndexNow key location:
-
-```bash
-npx wrangler secret put INDEXNOW_KEY_LOCATION
-```
-
-Without `INDEXNOW_KEY_LOCATION`, the Worker uses `https://<submitted-host>/<INDEXNOW_KEY>.txt`. That file must be publicly reachable and contain only the IndexNow key.
+IndexNow always uses the root key location `https://<submitted-host>/<INDEXNOW_KEY>.txt`. That file must be publicly reachable and contain only the IndexNow key.
 
 ### `GOOGLE_SERVICE_ACCOUNT_JSON`
 
@@ -79,7 +65,7 @@ The service account used for Search Console reads requests:
 https://www.googleapis.com/auth/webmasters.readonly
 ```
 
-Google's Indexing API uses a separate `https://www.googleapis.com/auth/indexing` scope. Google documents that the service account used for Indexing API access must be added as a Search Console **site owner**. If `GOOGLE_INDEXING_SERVICE_ACCOUNT_JSON` is not set, the same `GOOGLE_SERVICE_ACCOUNT_JSON` identity is used for both scopes.
+Google's Indexing API uses a separate `https://www.googleapis.com/auth/indexing` scope. The same `GOOGLE_SERVICE_ACCOUNT_JSON` identity is used for Search Console and Indexing API, and it must be added as a Search Console **site owner**.
 
 PageSpeed Insights reuses the same `GOOGLE_SERVICE_ACCOUNT_JSON` and requests the API's documented `openid` OAuth scope.
 
