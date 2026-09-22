@@ -6,7 +6,7 @@ import { analyticsCompare, analyticsAnomalies, seoAudit, genaiQueryInsights, key
 import { schemaInspect, siteHealthCheck } from './technical.js';
 import { indexingSubmit, indexingStatus } from './indexing.js';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.5.1';
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 const writeAction = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
 const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
