@@ -1,6 +1,39 @@
 name: mcp-search-console
 
 services:
+  egress-proxy:
+    image: gogost/gost:3.3
+    container_name: mcp-search-console-egress
+
+    restart: unless-stopped
+
+    # 只给 OpenAI Tunnel control-plane 使用：
+    # tunnel-client -> HTTP CONNECT -> gost -> SOCKS5 upstream -> OpenAI
+    command:
+      - "-L"
+      - "http://:18080"
+      - "-F"
+      - "${SOCKS5_UPSTREAM:?SOCKS5_UPSTREAM is required}"
+
+    read_only: true
+
+    cap_drop:
+      - ALL
+
+    security_opt:
+      - no-new-privileges:true
+
+    pids_limit: 64
+
+    mem_limit: 32m
+    mem_reservation: 8m
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   mcp-search-console:
     build:
       context: .
@@ -13,6 +46,9 @@ services:
 
     restart: unless-stopped
 
+    depends_on:
+      - egress-proxy
+
     env_file:
       - .env
 
@@ -20,6 +56,13 @@ services:
       MCP_COMMAND: "node /app/src/runtime/stdio.js"
       GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google_service_account
       BING_API_KEY_FILE: /run/secrets/bing_api_key
+
+      # IMPORTANT:
+      # 只代理 tunnel-client -> OpenAI control plane。
+      # 不设置 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY，
+      # 因而 stdio 子进程访问 Bing/Google/PageSpeed 仍直接走 VPS 出口 IP。
+      CONTROL_PLANE_HTTP_PROXY: http://egress-proxy:18080
+
       HEALTH_LISTEN_ADDR: 127.0.0.1:8080
       LOG_LEVEL: info
       LOG_FORMAT: json
