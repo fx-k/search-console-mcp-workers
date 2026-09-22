@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { indexNowSubmit, googleIndexingSubmit } from '../src/indexing.js';
+import { indexNowSubmit, indexNowStatus, googleIndexingSubmit } from '../src/indexing.js';
 
 test('IndexNow submits same-host URLs with the configured key', async () => {
   const originalFetch = globalThis.fetch;
@@ -41,4 +41,25 @@ test('Google Indexing reports missing service-account configuration before netwo
     () => googleIndexingSubmit({}, ['https://example.com/a'], 'updated'),
     /未配置 GOOGLE_SERVICE_ACCOUNT_JSON/
   );
+});
+
+
+test('IndexNow status verifies the root key file from siteUrl', async () => {
+  const originalFetch = globalThis.fetch;
+  let requested;
+  globalThis.fetch = async url => {
+    requested = String(url);
+    return new Response('abcDEF12-3456\n', { status: 200 });
+  };
+  try {
+    const result = await indexNowStatus(
+      { INDEXNOW_KEY: 'abcDEF12-3456' },
+      'https://example.com/'
+    );
+    assert.equal(requested, 'https://example.com/abcDEF12-3456.txt');
+    assert.equal(result.verificationFetchStatus, 200);
+    assert.equal(result.verificationMatches, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
