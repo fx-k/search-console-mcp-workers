@@ -117,6 +117,7 @@ export async function googleIndexingStatus(env, urls) {
 
 function indexNowConfig(env, urls) {
   if (!env.INDEXNOW_KEY) throw new Error('IndexNow 未配置 INDEXNOW_KEY');
+  if (!/^[A-Za-z0-9-]{8,128}$/u.test(env.INDEXNOW_KEY)) throw new Error('INDEXNOW_KEY 必须为 8-128 位字母、数字或连字符');
   const normalized = validateUrls(urls);
   if (normalized.length > 1000) throw new Error('本 Worker 单次最多提交 1000 个 IndexNow URL');
   const host = new URL(normalized[0]).hostname.toLowerCase();
