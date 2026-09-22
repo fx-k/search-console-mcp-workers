@@ -23,21 +23,16 @@ export async function bingSites(env) {
   return bingRequest(env, 'GetUserSites');
 }
 
-export async function resolveBingSite(env, input) {
-  const sites = await bingSites(env);
-  const raw = String(input);
+export async function resolveBingSite(_env, input) {
+  const raw = String(input).trim();
   if (raw.startsWith('sc-domain:')) {
     const host = raw.slice('sc-domain:'.length).toLowerCase();
-    const matches = sites.filter(s => { try { return new URL(s.Url).hostname.toLowerCase() === host; } catch { return false; } });
-    if (matches.length) return (matches.find(s => String(s.Url).startsWith('https://')) || matches[0]).Url;
-    throw new Error(`Bing Webmaster 中找不到 ${host} 对应的站点`);
+    if (!host) throw new Error('Bing siteUrl 不能为空');
+    return 'https://' + host + '/';
   }
   const wanted = new URL(raw);
-  const exact = sites.find(s => { try { const u = new URL(s.Url); return u.href === wanted.href || u.origin === wanted.origin; } catch { return false; } });
-  if (exact) return exact.Url;
-  const host = sites.find(s => { try { return new URL(s.Url).hostname.toLowerCase() === wanted.hostname.toLowerCase(); } catch { return false; } });
-  if (host) return host.Url;
-  throw new Error(`Bing Webmaster 中找不到 ${wanted.hostname} 对应的站点`);
+  if (!['http:', 'https:'].includes(wanted.protocol)) throw new Error('Bing siteUrl 必须使用 http/https');
+  return wanted.protocol + '//' + wanted.host + '/';
 }
 
 export function normalizeBingDate(value) {
