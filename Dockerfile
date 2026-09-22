@@ -13,7 +13,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=tunnel-client /usr/bin/tunnel-client /usr/bin/tunnel-client
-COPY --from=tunnel-client /usr/bin/cloudflared /usr/bin/cloudflared
 
 WORKDIR /app
 COPY package.json ./
